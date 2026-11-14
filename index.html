@@ -111,7 +111,7 @@ th{background:#14171d}
 
 <dialog id="hdlg">
   <h3 style="margin-top:0">📜 Chat History</h3>
-  <div style="display:flex;gap:6px;margin-bottom:8px"><button id="hnew" class="pri" style="flex:1">➕ Notun chat</button><button id="hall">🗑️ Sob delete</button></div>
+  <div style="margin-bottom:8px"><button id="hnew" class="pri" style="width:100%">➕ Notun chat</button></div>
   <div id="hlist"></div>
   <div style="text-align:right;margin-top:8px"><button id="hclose">Close</button></div>
 </dialog>
@@ -437,15 +437,26 @@ function toXls(rows){return '<html xmlns:x="urn:schemas-microsoft-com:office:exc
 // ---------- Chat history (multiple chats) ----------
 const HINT='<div class="hint">👋 Ami FM Ai Mood.<br>Coding, research, lekha, business idea, image analysis, sob e help kori.<br>Prothome ⚙️ e tomar API provider ar key boshao.</div>';
 let CHATS=[],CUR=null;
-function persist(){try{localStorage.setItem('fm_chats',JSON.stringify(CHATS));if(CUR)localStorage.setItem('fm_cur',CUR);else localStorage.removeItem('fm_cur')}catch(e){}}
+const IDB={db:null,
+  open(){return new Promise(r=>{try{const q=indexedDB.open('fm_ai_mood',1);q.onupgradeneeded=()=>q.result.createObjectStore('kv');q.onsuccess=()=>{IDB.db=q.result;r(true)};q.onerror=()=>r(false)}catch(e){r(false)}})},
+  get(k){return new Promise(r=>{if(!IDB.db)return r(null);try{const q=IDB.db.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>r(q.result===undefined?null:q.result);q.onerror=()=>r(null)}catch(e){r(null)}})},
+  set(k,v){return new Promise(r=>{if(!IDB.db)return r(false);try{const t=IDB.db.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=()=>r(true);t.onerror=()=>r(false);t.onabort=()=>r(false)}catch(e){r(false)}})}};
+let warned=false;
+async function persist(){
+  const ok=await IDB.set('state',{chats:CHATS,cur:CUR});
+  if(ok)return true;
+  try{localStorage.setItem('fm_chats',JSON.stringify(CHATS));if(CUR)localStorage.setItem('fm_cur',CUR);else localStorage.removeItem('fm_cur')}
+  catch(e){if(!warned){warned=true;alert('Phone e storage full, chat save hocche na. Purono chat delete koro.')}}
+  return false;
+}
 function saveChat(){
   if(!hist.length)return;
-  const msgs=hist.slice(-60).map(m=>({role:m.role,text:m.text,img:!!m.img}));
+  const msgs=hist.map(m=>({role:m.role,text:m.text,img:!!m.img}));
   let c=CHATS.find(x=>x.id===CUR);
   if(!c){const f=hist.find(x=>x.role==='user');c={id:'c'+Date.now(),title:(f?f.text:'Notun chat').replace(/\s+/g,' ').slice(0,45),ts:0,msgs:[]};CHATS.unshift(c);CUR=c.id}
   c.msgs=msgs;c.ts=Date.now();
   CHATS.sort((a,b)=>b.ts-a.ts);
-  if(CHATS.length>100)CHATS.length=100;
+  if(CHATS.length>300)CHATS.length=300;
   persist();
 }
 function renderMsgs(msgs){
@@ -481,21 +492,23 @@ $('hlist').onclick=e=>{
   const it=e.target.closest('.hi');if(it)openChat(it.dataset.id);
 };
 $('hnew').onclick=()=>{newChat();$('hdlg').close()};
-$('hall').onclick=()=>{
-  if(!CHATS.length)return;
-  if(!confirm('Sob chat history delete korbe? Eta ar ferot ashbe na.'))return;
-  CHATS=[];CUR=null;if(!busy){hist=[];renderMsgs([])}persist();renderHist();
-};
 $('hclose').onclick=()=>$('hdlg').close();
-function loadChat(){
-  try{CHATS=JSON.parse(localStorage.getItem('fm_chats')||'[]')}catch(e){CHATS=[]}
-  CUR=null;try{CUR=localStorage.getItem('fm_cur')}catch(e){}
-  try{
-    const old=localStorage.getItem('fm_hist');
-    if(old&&!CHATS.length){const a=JSON.parse(old);if(a.length){const f=a.find(x=>x.role==='user');const c={id:'c'+Date.now(),title:(f?f.text:'Chat').replace(/\s+/g,' ').slice(0,45),ts:Date.now(),msgs:a};CHATS.push(c);CUR=c.id}}
-    localStorage.removeItem('fm_hist');
-  }catch(e){}
-  persist();
+async function loadChat(){
+  await IDB.open();
+  const st=await IDB.get('state');
+  if(st){CHATS=Array.isArray(st.chats)?st.chats:[];CUR=st.cur||null}
+  else{
+    try{CHATS=JSON.parse(localStorage.getItem('fm_chats')||'[]')}catch(e){CHATS=[]}
+    CUR=null;try{CUR=localStorage.getItem('fm_cur')||null}catch(e){}
+    try{
+      const old=localStorage.getItem('fm_hist');
+      if(old&&!CHATS.length){const a=JSON.parse(old);if(a.length){const f=a.find(x=>x.role==='user');const c={id:'c'+Date.now(),title:(f?f.text:'Chat').replace(/\s+/g,' ').slice(0,45),ts:Date.now(),msgs:a};CHATS.push(c);CUR=c.id}}
+      localStorage.removeItem('fm_hist');
+    }catch(e){}
+    const ok=await persist();
+    if(ok){try{localStorage.removeItem('fm_chats');localStorage.removeItem('fm_cur')}catch(e){}}
+  }
+  try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
   const c=CHATS.find(x=>x.id===CUR);
   if(c){hist=c.msgs.map(m=>({role:m.role,text:m.text}));renderMsgs(c.msgs)}
 }
