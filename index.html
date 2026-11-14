@@ -40,6 +40,19 @@ dialog::backdrop{background:#000a}
 .sm{font-size:12px;color:var(--mut)}
 .bar{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .bar button{font-size:12px;padding:4px 9px}
+.gen{max-width:100%!important;width:100%}
+table{border-collapse:collapse;margin:6px 0;font-size:13px;display:block;overflow-x:auto}
+th,td{border:1px solid var(--bd);padding:4px 8px;text-align:left}
+th{background:#14171d}
+#mic.on{background:#c0392b;border-color:#c0392b}
+#mode{flex:1 0 100%}
+.hi{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid var(--bd);border-radius:10px;margin-bottom:6px;cursor:pointer}
+.hi.cur{border-color:var(--ac)}
+.hi .t{flex:1;min-width:0}
+.hi .t b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;font-size:14px}
+.hi .t span{font-size:11px;color:var(--mut)}
+.hi button{padding:4px 8px}
+#hlist{max-height:55dvh;overflow-y:auto}
 #vcv{width:100%;max-height:60dvh;object-fit:contain;background:#000;border-radius:10px}
 #pf{width:100%;height:65dvh;border:1px solid var(--bd);border-radius:10px;background:#fff}
 </style>
@@ -47,19 +60,21 @@ dialog::backdrop{background:#000a}
 <body>
 <header>
   <h1>🧠 FM Ai <span>Mood</span></h1>
+  <button id="newb" title="Notun chat">➕</button>
+  <button id="histb" title="Chat history">📜</button>
+  <button id="setb">⚙️</button>
   <select id="mode">
     <option value="assistant">🧰 Assistant (sob kaj)</option>
     <option value="video">🎬 Video</option>
     <option value="doc">📄 PDF / Doc</option>
+    <option value="image">🖼️ Image</option>
     <option value="code">💻 Coding</option>
     <option value="research">🔎 Research</option>
     <option value="write">✍️ Writing</option>
     <option value="biz">💰 Online Income</option>
     <option value="general">💬 General</option>
   </select>
-  <button id="setb">⚙️</button>
-  <button id="clr">🗑️</button>
-</header>
+  </header>
 
 <div id="chat"><div class="hint">👋 Ami FM Ai Mood.<br>Coding, research, lekha, business idea, image analysis, sob e help kori.<br>Prothome ⚙️ e tomar API provider ar key boshao.</div></div>
 
@@ -67,6 +82,7 @@ dialog::backdrop{background:#000a}
   <div id="prev"></div>
   <div id="row">
     <button id="att">📎</button>
+    <button id="mic">🎤</button>
     <input type="file" id="file" accept="image/*" hidden>
     <textarea id="inp" rows="1" placeholder="Ekhane lekho..."></textarea>
     <button id="send" class="pri">➤</button>
@@ -87,8 +103,17 @@ dialog::backdrop{background:#000a}
   <div id="help" class="sm" style="margin:-4px 0 10px"></div>
   <label>Extra instruction (optional)</label>
   <textarea id="extra" rows="2" placeholder="Jemon: sob uttor Banglish e dao"></textarea>
+  <label>Voice input language (🎤)</label>
+  <select id="vlang"><option value="bn-BD">বাংলা</option><option value="en-US">English</option><option value="hi-IN">हिन्दी</option></select>
   <p class="sm">Key ta shudhu tomar browser e thake (localStorage). Request shorashori tomar choose kora provider er server e jay. Unknown/reseller API te sensitive kichu likho na.</p>
   <div style="text-align:right"><button id="close">Cancel</button> <button id="save" class="pri">Save</button></div>
+</dialog>
+
+<dialog id="hdlg">
+  <h3 style="margin-top:0">📜 Chat History</h3>
+  <div style="display:flex;gap:6px;margin-bottom:8px"><button id="hnew" class="pri" style="flex:1">➕ Notun chat</button><button id="hall">🗑️ Sob delete</button></div>
+  <div id="hlist"></div>
+  <div style="text-align:right;margin-top:8px"><button id="hclose">Close</button></div>
 </dialog>
 
 <dialog id="pdlg">
@@ -100,6 +125,7 @@ dialog::backdrop{background:#000a}
 <dialog id="vdlg">
   <h3 style="margin-top:0">🎬 Video</h3>
   <canvas id="vcv" width="720" height="1280"></canvas>
+  <label class="sm" style="display:block;margin-top:6px"><input type="checkbox" id="vmus" checked style="width:auto;margin:0 6px 0 0">🎵 Background music (record e)</label>
   <div id="vst" class="sm" style="margin:6px 0"></div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
     <button id="vplay">▶ Voice shoho play</button>
@@ -125,20 +151,22 @@ const PROVIDERS={
  custom_a:{n:'Custom (Anthropic-style)',t:'anthropic',base:'',models:[],help:'Anthropic-style proxy hole eta nao.'}
 };
 const BASE="Tumi 'FM Ai Mood', ekta powerful, bondhusulov AI assistant. User Bangladeshi, Banglish (Bangla English-e lekha) ba Bangla/English e kotha bole. User jei bhashay lekhe sei bhashay uttor dao. Uttor sohoj, short ar kajer moto rakho, mobile screen e porar upojogi. Kono kichu jana na thakle bhul tothyo banio na, sotti bolo.";
-const VIDEO_SPEC='Video banate hole shudhu ekta ```video-json code block dao (app er Video button theke video hoy). Format: {"ratio":"9:16","seconds":4,"brand":"optional","lang":"bn-BD","slides":[{"title":"..","text":"..","narration":"..","bg":["#hex1","#hex2"]}]}. 5 theke 10 ta slide, chhoto chhoto text, ratio 9:16 (Reels/Shorts) ba 16:9. Code block er por 1-2 line e bolo kibhabe video hobe.';
+const VIDEO_SPEC='Video banate hole shudhu ekta ```video-json code block dao (app er Video button theke video hoy). Format: {"ratio":"9:16","seconds":4,"brand":"optional","lang":"bn-BD","slides":[{"title":"..","text":"..","narration":"..","bg":["#hex1","#hex2"],"image":"optional short English image prompt"}]}. image dile slide e AI-generated background ashe (optional, slow hote pare). 5 theke 10 ta slide, chhoto chhoto text, ratio 9:16 (Reels/Shorts) ba 16:9. Code block er por 1-2 line e bolo kibhabe video hobe.';
 const MODES={
  code:"Tumi expert software engineer. Complete, working code dao, code block e language shoho. Beshi explain na kore agey code, tarpor short note. Bug fix e kaaron bujhao. Website hole single-file HTML (Netlify ready) bhalo.",
  research:"Tumi researcher. Latest tothyo dite chesta koro, source mention koro, sure na hole bolo.",
  write:"Tumi expert writer (Bangla ar English). Post, caption, email, pitch, script, article likho. Natural ar manusher moto tone rakho.",
  biz:"Tumi online income coach, Bangladesh context e (Fiverr, Upwork, F-commerce, freelancing, AI service). Realistic, step-by-step plan dao, fake income promise dio na, scam bhalo bhabe chiniye dao.",
- assistant:"Tumi user er personal assistant, sob kaj korte paro. Kaj onujayi format dao: (1) Website/landing page/design/poster/card/UI: ekta complete single-file ```html block (inline CSS/JS, mobile friendly), app e Preview button ase. (2) PDF/CV/letter/report/notes/plan: sundor formatted markdown dao, user message er niche 📄 PDF ba Word button chepe nibe. (3) Code/script: language shoho code block. (4) "+VIDEO_SPEC+" (5) Research/advice: short ar practical uttor. Kono kaj korte na parle sotti bolo ar ki kora jay seta bolo.",
+ assistant:"Tumi user er personal assistant, sob kaj korte paro. Kaj onujayi format dao: (1) Website/landing page/design/poster/card/UI: ekta complete single-file ```html block (inline CSS/JS, mobile friendly), app e Preview button ase. (2) PDF/CV/letter/report/notes/plan: sundor formatted markdown dao, user message er niche 📄 PDF ba Word button chepe nibe. (3) Code/script: language shoho code block. (4) "+VIDEO_SPEC+" (5) Research/advice: short ar practical uttor. (6) Image chaile ekta ```image-prompt block e detailed English prompt dao (app e Generate button ase). (7) Table/Excel data hole markdown table dao (app e CSV/Excel button ase). Kono kaj korte na parle sotti bolo ar ki kora jay seta bolo.",
+ image:"Tumi image prompt engineer. User er idea theke ekta detailed English image prompt toiri koro (subject, style, lighting, mood, composition). Shudhu prompt ta likho, onno kichu na.",
  video:"Tumi video script/slide designer. "+VIDEO_SPEC,
  doc:"Tumi document writer. Resume, CV, letter, application, invoice, report, notes, plan sundor markdown e likho (heading ar list diye, clean). Shesh e bolo: niche 📄 PDF button chepe PDF save kora jay. Jekhane tothyo nai sekhane [Nam] moto placeholder dao.",
  general:"Tumi general helpful assistant."
 };
 
 // neutral history: {role:'user'|'assistant', text, img?:{mime,data}}
-let hist=[],img=null,busy=false;
+let hist=[],img=null,busy=false,ABORT=null;
+function recent(){let a=hist.slice(-20);while(a.length&&a[0].role!=='user')a.shift();return a}
 
 function cfg(){
   const p=S.get('prov','gemini');
@@ -154,33 +182,39 @@ function fillSettings(p){
 }
 $('prov').innerHTML=Object.entries(PROVIDERS).map(([k,v])=>`<option value="${k}">${v.n}</option>`).join('');
 $('prov').onchange=()=>fillSettings($('prov').value);
-$('setb').onclick=()=>{$('prov').value=S.get('prov','gemini');fillSettings($('prov').value);$('extra').value=S.get('extra');$('dlg').showModal()};
+$('setb').onclick=()=>{$('prov').value=S.get('prov','gemini');fillSettings($('prov').value);$('extra').value=S.get('extra');$('vlang').value=S.get('vlang','bn-BD');$('dlg').showModal()};
 $('close').onclick=()=>$('dlg').close();
 $('save').onclick=()=>{
   const p=$('prov').value;
-  S.set('prov',p);S.set('base_'+p,$('base').value.trim().replace(/\/+$/,''));S.set('key_'+p,$('key').value.trim());S.set('model_'+p,$('model').value.trim());S.set('extra',$('extra').value.trim());
+  S.set('prov',p);S.set('base_'+p,$('base').value.trim().replace(/\/+$/,''));S.set('key_'+p,$('key').value.trim());S.set('model_'+p,$('model').value.trim());S.set('extra',$('extra').value.trim());S.set('vlang',$('vlang').value);
   $('dlg').close();
 };
 
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function inline(s){return esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,'<a style="color:var(--ac)" target="_blank" href="$2">$1</a>')}
-function xb(l){l=(l||'').toLowerCase();if(l==='html')return '<button data-a="prev">Preview</button>';if(l==='video-json'||l==='video')return '<button data-a="video">🎬 Video</button>';return ''}
+function xb(l){l=(l||'').toLowerCase();if(l==='html')return '<button data-a="prev">Preview</button>';if(l==='video-json'||l==='video')return '<button data-a="video">🎬 Video</button>';if(l==='image-prompt'||l==='imageprompt'||l==='image')return '<button data-a="img">🖼️ Generate</button>';return ''}
+const SEP=/^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 function md(t){
   const parts=t.split(/```/);let out='';
   parts.forEach((p,i)=>{
     if(i%2){const nl=p.indexOf('\n');const lang=(nl>-1?p.slice(0,nl):'').trim()||'code';const code=nl>-1?p.slice(nl+1):p;
       out+=`<div class="cb"><div class="cbh"><span>${esc(lang)}</span><span>${xb(lang)}<button data-a="copy">Copy</button><button data-a="dl" data-l="${esc(lang)}">Download</button></span></div><pre><code>${esc(code.replace(/\n$/,''))}</code></pre></div>`}
     else{
-      let html='',list=null;
+      let html='',list=null,tb=[];
       const close=()=>{if(list){html+=`</${list}>`;list=null}};
+      const flush=()=>{if(!tb.length)return;
+        const rows=tb.filter(l=>!SEP.test(l)).map(l=>l.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim()));
+        html+='<table>'+rows.map((r,ri)=>{const tg=ri?'td':'th';return '<tr>'+r.map(c=>`<${tg}>${inline(c)}</${tg}>`).join('')+'</tr>'}).join('')+'</table>';tb=[]};
       p.split('\n').forEach(l=>{
         let m;
+        if(/^\s*\|.*\|\s*$/.test(l)){close();tb.push(l);return}
+        flush();
         if(m=l.match(/^\s*[-*]\s+(.*)/)){if(list!=='ul'){close();html+='<ul>';list='ul'}html+=`<li>${inline(m[1])}</li>`}
         else if(m=l.match(/^\s*\d+[.)]\s+(.*)/)){if(list!=='ol'){close();html+='<ol>';list='ol'}html+=`<li>${inline(m[1])}</li>`}
         else if(m=l.match(/^#{1,3}\s+(.*)/)){close();html+=`<h3>${inline(m[1])}</h3>`}
         else if(l.trim()===''){close()}
         else{close();html+=`<p>${inline(l)}</p>`}
-      });close();out+=html}
+      });close();flush();out+=html}
   });return out;
 }
 const chat=$('chat');
@@ -192,15 +226,16 @@ chat.addEventListener('click',e=>{
   const code=b.closest('.cb').querySelector('code').textContent;
   if(b.dataset.a==='prev'){showPrev(code)}
   else if(b.dataset.a==='video'){makeVideo(code)}
+  else if(b.dataset.a==='img'){genImage(code.trim())}
   else if(b.dataset.a==='copy'){navigator.clipboard.writeText(code).then(()=>{b.textContent='✓';setTimeout(()=>b.textContent='Copy',1200)}).catch(()=>{})}
-  else{const l=(b.dataset.l||'txt').toLowerCase();const ext={html:'html',python:'py',py:'py',javascript:'js',js:'js',css:'css',json:'json',bash:'sh',sh:'sh',typescript:'ts',ts:'ts'}[l]||'txt';
+  else{const l=(b.dataset.l||'txt').toLowerCase();const ext={html:'html',python:'py',py:'py',javascript:'js',js:'js',css:'css',json:'json',bash:'sh',sh:'sh',typescript:'ts',ts:'ts',csv:'csv'}[l]||'txt';
     const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([code],{type:'text/plain'}));a.download=(ext==='html'?'index':'file')+'.'+ext;a.click()}
 });
 
 $('att').onclick=()=>$('file').click();
 $('file').onchange=e=>{const f=e.target.files[0];if(!f)return;
   const r=new FileReader();r.onload=()=>{img={mime:f.type,data:r.result.split(',')[1],url:r.result};$('prev').textContent='🖼️ '+f.name+' attached'};r.readAsDataURL(f);e.target.value=''};
-$('clr').onclick=()=>{hist=[];chat.innerHTML='<div class="hint">Chat clear hoyeche.</div>'};
+$('newb').onclick=()=>newChat();$('histb').onclick=()=>openHist();
 $('mode').value=S.get('mode','assistant');
 $('mode').onchange=()=>S.set('mode',$('mode').value);
 $('inp').addEventListener('input',e=>{e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,140)+'px'});
@@ -225,28 +260,28 @@ async function fail(res){
 }
 
 async function* callGemini(c,sys,mode){
-  const contents=hist.slice(-20).map(m=>({role:m.role==='user'?'user':'model',parts:[...(m.img?[{inlineData:{mimeType:m.img.mime,data:m.img.data}}]:[]),{text:m.text}]}));
+  const contents=recent().map(m=>({role:m.role==='user'?'user':'model',parts:[...(m.img?[{inlineData:{mimeType:m.img.mime,data:m.img.data}}]:[]),{text:m.text}]}));
   const body={systemInstruction:{parts:[{text:sys}]},contents};
   if(mode==='research')body.tools=[{google_search:{}}];
-  const res=await fetch(`${c.base}/models/${encodeURIComponent(c.model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(c.key)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const res=await fetch(`${c.base}/models/${encodeURIComponent(c.model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(c.key)}`,{signal:ABORT&&ABORT.signal,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!res.ok)await fail(res);
   for await(const d of sse(res)){try{const j=JSON.parse(d);const t=(j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('');if(t)yield t}catch(e){}}
 }
 async function* callOpenAI(c,sys){
-  const messages=[{role:'system',content:sys},...hist.slice(-20).map(m=>({role:m.role,content:m.img?[{type:'image_url',image_url:{url:`data:${m.img.mime};base64,${m.img.data}`}},{type:'text',text:m.text}]:m.text}))];
-  const res=await fetch(c.base+'/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.key},body:JSON.stringify({model:c.model,messages,stream:true})});
+  const messages=[{role:'system',content:sys},...recent().map(m=>({role:m.role,content:m.img?[{type:'image_url',image_url:{url:`data:${m.img.mime};base64,${m.img.data}`}},{type:'text',text:m.text}]:m.text}))];
+  const res=await fetch(c.base+'/chat/completions',{signal:ABORT&&ABORT.signal,method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.key},body:JSON.stringify({model:c.model,messages,stream:true})});
   if(!res.ok)await fail(res);
   for await(const d of sse(res)){try{const j=JSON.parse(d);const t=j.choices?.[0]?.delta?.content;if(t)yield t}catch(e){}}
 }
 async function* callAnthropic(c,sys){
-  const messages=hist.slice(-20).map(m=>({role:m.role,content:m.img?[{type:'image',source:{type:'base64',media_type:m.img.mime,data:m.img.data}},{type:'text',text:m.text}]:m.text}));
-  const res=await fetch(c.base+'/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':c.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:c.model,max_tokens:4096,system:sys,messages,stream:true})});
+  const messages=recent().map(m=>({role:m.role,content:m.img?[{type:'image',source:{type:'base64',media_type:m.img.mime,data:m.img.data}},{type:'text',text:m.text}]:m.text}));
+  const res=await fetch(c.base+'/messages',{signal:ABORT&&ABORT.signal,method:'POST',headers:{'Content-Type':'application/json','x-api-key':c.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:c.model,max_tokens:4096,system:sys,messages,stream:true})});
   if(!res.ok)await fail(res);
   for await(const d of sse(res)){try{const j=JSON.parse(d);if(j.type==='content_block_delta'&&j.delta?.text)yield j.delta.text}catch(e){}}
 }
 
 async function send(){
-  if(busy)return;
+  if(busy){if(ABORT)ABORT.abort();return}
   const c=cfg();
   if(!c.key||!c.base||!c.model){$('setb').click();return}
   const text=$('inp').value.trim();
@@ -258,9 +293,10 @@ async function send(){
   hist.push(msg);
   $('inp').value='';$('inp').style.height='auto';img=null;$('prev').textContent='';
   const mode=$('mode').value;
+  if(mode==='image'){hist.pop();await imageFlow(msg.text);return}
   const sys=BASE+'\n'+MODES[mode]+(S.get('extra')?'\nUser instruction: '+S.get('extra'):'');
   const out=add('bot','<i style="color:var(--mut)">Bhabchi...</i>');
-  busy=true;$('send').disabled=true;
+  busy=true;ABORT=new AbortController();$('send').textContent='■';
   let full='';
   try{
     const t=PROVIDERS[c.p].t;
@@ -271,10 +307,10 @@ async function send(){
     hist.push({role:'assistant',text:full});
     addBar(out,full);
   }catch(e){
-    out.innerHTML='⚠️ '+esc(e.message||String(e));
-    hist.pop();
+    if(e.name==='AbortError'&&full){out.innerHTML=md(full);hist.push({role:'assistant',text:full});addBar(out,full)}
+    else{out.innerHTML='⚠️ '+esc(e.name==='AbortError'?'Stopped.':(e.message||String(e)));hist.pop()}
   }
-  busy=false;$('send').disabled=false;
+  busy=false;ABORT=null;$('send').textContent='➤';saveChat();
 }
 
 // ---------- Preview ----------
@@ -294,11 +330,13 @@ function printHtml(body){
 }
 function addBar(el,text){
   const b=document.createElement('div');b.className='bar';
-  b.innerHTML='<button data-b="pdf">📄 PDF</button><button data-b="doc">⬇ Word</button><button data-b="md">⬇ .md</button><button data-b="cp">Copy</button>';
+  const rows=parseTable(text);b.innerHTML='<button data-b="pdf">📄 PDF</button><button data-b="doc">⬇ Word</button><button data-b="md">⬇ .md</button>'+(rows?'<button data-b="csv">⬇ CSV</button><button data-b="xls">⬇ Excel</button>':'')+'<button data-b="cp">Copy</button>';
   b.onclick=e=>{const k=e.target.dataset.b;if(!k)return;
     if(k==='pdf')printHtml(cleanHtml(text));
     else if(k==='doc')dl('<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>'+DOCCSS+'</style></head><body>'+cleanHtml(text)+'</body></html>','document.doc','application/msword');
     else if(k==='md')dl(text,'document.md');
+    else if(k==='csv')dl(toCsv(rows),'table.csv','text/csv;charset=utf-8');
+    else if(k==='xls')dl(toXls(rows),'table.xls','application/vnd.ms-excel');
     else navigator.clipboard.writeText(text).then(()=>{e.target.textContent='✓';setTimeout(()=>e.target.textContent='Copy',1200)}).catch(()=>{});
   };
   el.appendChild(b);chat.scrollTop=chat.scrollHeight;
@@ -314,7 +352,7 @@ function makeVideo(code){
   VJ=v;
   const cv=$('vcv'),land=v.ratio==='16:9';cv.width=land?1280:720;cv.height=land?720:1280;
   drawSlide(cv.getContext('2d'),cv.width,cv.height,v.slides[0],0.5,0,v.slides.length,v.brand);
-  $('vst').textContent=v.slides.length+' ta slide. Record korle voice thakbe na (browser limit). Voice chaile "Voice shoho play" chepe screen record koro.';
+  $('vst').textContent=v.slides.length+' ta slide. Record korle music thake kintu voice thakbe na (browser limit). Voice chaile "Voice shoho play" chepe phone er screen recorder on koro.';
   $('vdlg').showModal();
 }
 function wrap(ctx,t,maxW){const words=String(t||'').split(/\s+/);const lines=[];let cur='';for(const w of words){const test=cur?cur+' '+w:w;if(ctx.measureText(test).width>maxW&&cur){lines.push(cur);cur=w}else cur=test}if(cur)lines.push(cur);return lines}
@@ -322,6 +360,7 @@ function drawSlide(ctx,W,H,s,p,i,n,brand){
   const cols=(Array.isArray(s.bg)&&s.bg.length>=2)?s.bg:PAL[i%PAL.length];
   const g=ctx.createLinearGradient(0,0,W,H);g.addColorStop(0,cols[0]);g.addColorStop(1,cols[1]);
   ctx.globalAlpha=1;ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  if(s._bmp){const b=s._bmp,sc=Math.max(W/b.width,H/b.height),bw=b.width*sc,bh2=b.height*sc;ctx.drawImage(b,(W-bw)/2,(H-bh2)/2,bw,bh2);ctx.fillStyle='rgba(0,0,0,.45)';ctx.fillRect(0,0,W,H)}
   const inP=Math.min(1,p*5),outP=p>0.93?(1-p)/0.07:1;
   const ff='"Noto Sans Bengali",system-ui,sans-serif';
   const tS=Math.round(W*0.075),bS=Math.round(W*0.048),maxW=W*0.84;
@@ -342,19 +381,24 @@ async function runVideo(record,speak){
   if(record&&!window.MediaRecorder){alert('Ei browser e recording support nai. Chrome use koro.');return}
   vBusy=true;vCancel=false;
   const cv=$('vcv'),ctx=cv.getContext('2d'),W=cv.width,H=cv.height,n=VJ.slides.length;
-  let rec=null,chunks=[],mt='';
+  await loadSlideImgs(VJ,W,H);
+  let rec=null,chunks=[],mt='',music=null;
   if(record){
-    mt=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(t=>MediaRecorder.isTypeSupported(t))||'';
-    rec=new MediaRecorder(cv.captureStream(30),mt?{mimeType:mt,videoBitsPerSecond:4000000}:{});
+    const stream=cv.captureStream(30);
+    if($('vmus').checked){try{music=startMusic();if(music&&music.track)stream.addTrack(music.track)}catch(e){music=null}}
+    const aud=!!(music&&music.track);
+    const cands=aud?['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/mp4','video/webm']:['video/mp4;codecs=avc1.42E01E','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+    mt=cands.find(t=>MediaRecorder.isTypeSupported(t))||'';
+    rec=new MediaRecorder(stream,mt?{mimeType:mt,videoBitsPerSecond:4000000}:{});
     rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};rec.start();
   }
   for(let i=0;i<n&&!vCancel;i++){
     const s=VJ.slides[i],dur=(Number(s.seconds)||Number(VJ.seconds)||4)*1000;
-    let spDone=!speak;
+    let spDone=true;
     if(speak&&window.speechSynthesis){
       spDone=false;
       new Promise(r=>{const u=new SpeechSynthesisUtterance(s.narration||[s.title,s.text].filter(Boolean).join('. '));u.lang=VJ.lang||'bn-BD';u.onend=r;u.onerror=r;setTimeout(r,20000);speechSynthesis.speak(u)}).then(()=>{spDone=true});
-    }else spDone=true;
+    }
     const t0=performance.now();
     while(!vCancel){
       const el=performance.now()-t0;
@@ -365,9 +409,10 @@ async function runVideo(record,speak){
     }
   }
   if(window.speechSynthesis)speechSynthesis.cancel();
+  if(music)music.stop();
   if(rec){
     await new Promise(r=>{rec.onstop=r;rec.stop()});
-    if(!vCancel){dl(new Blob(chunks,{type:mt||'video/webm'}),'fm-ai-mood-video.webm','video/webm');$('vst').textContent='✅ Video download hoyeche (.webm)'}
+    if(!vCancel){const base=(mt||'video/webm').split(';')[0],ext=base==='video/mp4'?'mp4':'webm';dl(new Blob(chunks,{type:base}),'fm-ai-mood-video.'+ext,base);$('vst').textContent='✅ Video download hoyeche (.'+ext+')'}
   }else $('vst').textContent=vCancel?'Stopped.':'Done.';
   vBusy=false;
 }
@@ -375,6 +420,171 @@ $('vrec').onclick=()=>runVideo(true,false);
 $('vplay').onclick=()=>runVideo(false,true);
 $('vclose').onclick=()=>{vCancel=true;if(window.speechSynthesis)speechSynthesis.cancel();$('vdlg').close()};
 $('vdlg').addEventListener('close',()=>{vCancel=true});
+
+// ---------- Tables (CSV / Excel) ----------
+function parseTable(text){
+  const tables=[];let cur=[];
+  text.split('\n').forEach(l=>{if(/^\s*\|.*\|\s*$/.test(l)){cur.push(l)}else{if(cur.length)tables.push(cur);cur=[]}});
+  if(cur.length)tables.push(cur);
+  if(!tables.length)return null;
+  const rows=tables[0].filter(l=>!SEP.test(l)).map(l=>l.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim().replace(/\*\*/g,'')));
+  return rows.length>1?rows:null;
+}
+function toCsv(rows){return '﻿'+rows.map(r=>r.map(c=>'"'+c.replace(/"/g,'""')+'"').join(',')).join('\r\n')}
+function toXls(rows){return '<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table border="1">'+rows.map((r,i)=>'<tr>'+r.map(c=>(i?'<td>':'<th>')+esc(c)+(i?'</td>':'</th>')).join('')+'</tr>').join('')+'</table></body></html>'}
+// ---------- end tables ----------
+
+// ---------- Chat history (multiple chats) ----------
+const HINT='<div class="hint">👋 Ami FM Ai Mood.<br>Coding, research, lekha, business idea, image analysis, sob e help kori.<br>Prothome ⚙️ e tomar API provider ar key boshao.</div>';
+let CHATS=[],CUR=null;
+function persist(){try{localStorage.setItem('fm_chats',JSON.stringify(CHATS));if(CUR)localStorage.setItem('fm_cur',CUR);else localStorage.removeItem('fm_cur')}catch(e){}}
+function saveChat(){
+  if(!hist.length)return;
+  const msgs=hist.slice(-60).map(m=>({role:m.role,text:m.text,img:!!m.img}));
+  let c=CHATS.find(x=>x.id===CUR);
+  if(!c){const f=hist.find(x=>x.role==='user');c={id:'c'+Date.now(),title:(f?f.text:'Notun chat').replace(/\s+/g,' ').slice(0,45),ts:0,msgs:[]};CHATS.unshift(c);CUR=c.id}
+  c.msgs=msgs;c.ts=Date.now();
+  CHATS.sort((a,b)=>b.ts-a.ts);
+  if(CHATS.length>100)CHATS.length=100;
+  persist();
+}
+function renderMsgs(msgs){
+  chat.innerHTML='';
+  if(!msgs.length){chat.innerHTML=HINT;return}
+  msgs.forEach(m=>{
+    if(m.role==='user')add('user',(m.img?'🖼️ ':'')+esc(m.text).replace(/\n/g,'<br>'));
+    else{const o=add('bot',md(m.text));addBar(o,m.text)}
+  });
+}
+function newChat(){if(busy)return;hist=[];CUR=null;persist();renderMsgs([])}
+function openChat(id){
+  if(busy)return;
+  const c=CHATS.find(x=>x.id===id);if(!c)return;
+  CUR=id;hist=c.msgs.map(m=>({role:m.role,text:m.text}));persist();renderMsgs(c.msgs);
+  if($('hdlg').open)$('hdlg').close();
+}
+function renderHist(){
+  const L=$('hlist');
+  if(!CHATS.length){L.innerHTML='<div class="sm" style="padding:12px;text-align:center">Kono chat history nai.</div>';return}
+  L.innerHTML=CHATS.map(c=>`<div class="hi${c.id===CUR?' cur':''}" data-id="${c.id}"><div class="t"><b>${esc(c.title||'Chat')}</b><span>${new Date(c.ts).toLocaleString([],{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})} · ${c.msgs.length} msg</span></div><button data-del="${c.id}">🗑️</button></div>`).join('');
+}
+function openHist(){renderHist();$('hdlg').showModal()}
+$('hlist').onclick=e=>{
+  const d=e.target.closest('[data-del]');
+  if(d){
+    const id=d.dataset.del;
+    if(!confirm('Ei chat ta delete korbe?'))return;
+    CHATS=CHATS.filter(c=>c.id!==id);
+    if(CUR===id&&!busy){CUR=null;hist=[];renderMsgs([])}
+    persist();renderHist();return;
+  }
+  const it=e.target.closest('.hi');if(it)openChat(it.dataset.id);
+};
+$('hnew').onclick=()=>{newChat();$('hdlg').close()};
+$('hall').onclick=()=>{
+  if(!CHATS.length)return;
+  if(!confirm('Sob chat history delete korbe? Eta ar ferot ashbe na.'))return;
+  CHATS=[];CUR=null;if(!busy){hist=[];renderMsgs([])}persist();renderHist();
+};
+$('hclose').onclick=()=>$('hdlg').close();
+function loadChat(){
+  try{CHATS=JSON.parse(localStorage.getItem('fm_chats')||'[]')}catch(e){CHATS=[]}
+  CUR=null;try{CUR=localStorage.getItem('fm_cur')}catch(e){}
+  try{
+    const old=localStorage.getItem('fm_hist');
+    if(old&&!CHATS.length){const a=JSON.parse(old);if(a.length){const f=a.find(x=>x.role==='user');const c={id:'c'+Date.now(),title:(f?f.text:'Chat').replace(/\s+/g,' ').slice(0,45),ts:Date.now(),msgs:a};CHATS.push(c);CUR=c.id}}
+    localStorage.removeItem('fm_hist');
+  }catch(e){}
+  persist();
+  const c=CHATS.find(x=>x.id===CUR);
+  if(c){hist=c.msgs.map(m=>({role:m.role,text:m.text}));renderMsgs(c.msgs)}
+}
+
+// ---------- Image generation (Pollinations, free, no key) ----------
+function imgUrl(prompt,w,h,seed){return 'https://image.pollinations.ai/prompt/'+encodeURIComponent(prompt)+'?width='+w+'&height='+h+'&nologo=true&seed='+seed}
+function showGen(prompt,w,h){
+  const box=add('bot','<i style="color:var(--mut)">🖼️ Image toiri hocche (10-40 sec lagte pare)...</i>');
+  const url=imgUrl(prompt,w,h,Math.floor(Math.random()*1e6));
+  const im=new Image();im.className='gen';
+  im.onload=()=>{
+    box.innerHTML='';box.appendChild(im);
+    const b=document.createElement('div');b.className='bar';
+    b.innerHTML='<button data-b="dl">⬇ Download</button><button data-b="re">🔄 Notun</button>';
+    b.onclick=async e=>{
+      const k=e.target.dataset.b;
+      if(k==='dl'){try{const r=await fetch(url);const bl=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='fm-ai-mood-image.jpg';a.click()}catch(x){window.open(url,'_blank')}}
+      else if(k==='re')showGen(prompt,w,h);
+    };
+    box.appendChild(b);
+    box.insertAdjacentHTML('beforeend','<div class="sm" style="margin-top:6px">Prompt: '+esc(prompt)+'</div>');
+    chat.scrollTop=chat.scrollHeight;
+  };
+  im.onerror=()=>{box.innerHTML='⚠️ Image toiri hoyni (free service busy ba limit). Ektu pore abar try koro.'};
+  im.src=url;
+}
+function genImage(prompt){showGen(prompt,1024,1024)}
+async function imageFlow(text){
+  busy=true;$('send').textContent='■';
+  let prompt=text;
+  const c=cfg();
+  if(c.key&&c.base&&c.model){
+    const hold=hist;
+    try{
+      hist=[{role:'user',text:text}];
+      ABORT=new AbortController();
+      const t=PROVIDERS[c.p].t,sys=MODES.image;
+      const gen=t==='gemini'?callGemini(c,sys,'image'):t==='anthropic'?callAnthropic(c,sys):callOpenAI(c,sys);
+      let full='';for await(const ch of gen)full+=ch;
+      full=full.trim().replace(/^```\w*\n?/,'').replace(/```$/,'').trim();
+      if(full)prompt=full.slice(0,800);
+    }catch(e){}
+    hist=hold;
+  }
+  busy=false;ABORT=null;$('send').textContent='➤';
+  showGen(prompt,1024,1024);
+}
+
+// ---------- Voice input ----------
+let rec2=null;
+$('mic').onclick=()=>{
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){alert('Ei browser e voice input nai. Chrome use koro.');return}
+  if(rec2){rec2.stop();return}
+  const r=new SR();r.lang=S.get('vlang','bn-BD');r.interimResults=true;r.continuous=false;
+  const base=$('inp').value;
+  r.onresult=e=>{let t='';for(const x of e.results)t+=x[0].transcript;$('inp').value=(base?base+' ':'')+t;$('inp').dispatchEvent(new Event('input'))};
+  const off=()=>{rec2=null;$('mic').classList.remove('on')};
+  r.onend=off;r.onerror=off;
+  rec2=r;$('mic').classList.add('on');
+  try{r.start()}catch(e){off()}
+};
+
+// ---------- Video helpers: images + music ----------
+async function loadSlideImgs(v,W,H){
+  if(!v.slides.some(s=>s.image&&s._bmp===undefined))return;
+  $('vst').textContent='Image gulo toiri hocche (kichu somoy lagte pare)...';
+  await Promise.all(v.slides.map(async s=>{
+    if(!s.image||s._bmp!==undefined)return;
+    const job=(async()=>{try{const r=await fetch(imgUrl(s.image,W,H,7));if(!r.ok)return null;return await createImageBitmap(await r.blob())}catch(e){return null}})();
+    s._bmp=await Promise.race([job,new Promise(r=>setTimeout(()=>r(null),45000))]);
+  }));
+}
+function startMusic(){
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC)return null;
+  const actx=new AC(),dest=actx.createMediaStreamDestination(),master=actx.createGain();
+  master.gain.value=0.05;master.connect(dest);master.connect(actx.destination);
+  const CH=[[220,261.6,329.6],[174.6,220,261.6],[261.6,329.6,392],[196,246.9,293.7]];
+  const oscs=[0,1,2].map(()=>{const o=actx.createOscillator();o.type='triangle';const g=actx.createGain();g.gain.value=0.33;o.connect(g);g.connect(master);o.start();return o});
+  let k=0;
+  const set=()=>{const c=CH[k++%4];oscs.forEach((o,i)=>o.frequency.setTargetAtTime(c[i],actx.currentTime,0.3))};
+  set();const iv=setInterval(set,4000);
+  return {track:dest.stream.getAudioTracks()[0],stop:()=>{clearInterval(iv);try{oscs.forEach(o=>o.stop());actx.close()}catch(e){}}};
+}
+
+// ---------- Misc ----------
+$('inp').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!('ontouchstart' in window)){e.preventDefault();send()}});
+loadChat();
 </script>
 </body>
 </html>
