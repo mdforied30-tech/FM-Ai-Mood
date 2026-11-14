@@ -38,12 +38,19 @@ dialog input,dialog textarea,dialog select{width:100%;margin:4px 0 10px}
 dialog label{font-size:13px;color:var(--mut)}
 dialog::backdrop{background:#000a}
 .sm{font-size:12px;color:var(--mut)}
+.bar{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.bar button{font-size:12px;padding:4px 9px}
+#vcv{width:100%;max-height:60dvh;object-fit:contain;background:#000;border-radius:10px}
+#pf{width:100%;height:65dvh;border:1px solid var(--bd);border-radius:10px;background:#fff}
 </style>
 </head>
 <body>
 <header>
   <h1>🧠 FM Ai <span>Mood</span></h1>
   <select id="mode">
+    <option value="assistant">🧰 Assistant (sob kaj)</option>
+    <option value="video">🎬 Video</option>
+    <option value="doc">📄 PDF / Doc</option>
     <option value="code">💻 Coding</option>
     <option value="research">🔎 Research</option>
     <option value="write">✍️ Writing</option>
@@ -84,6 +91,23 @@ dialog::backdrop{background:#000a}
   <div style="text-align:right"><button id="close">Cancel</button> <button id="save" class="pri">Save</button></div>
 </dialog>
 
+<dialog id="pdlg">
+  <h3 style="margin-top:0">👁️ Preview</h3>
+  <iframe id="pf" sandbox="allow-scripts"></iframe>
+  <div style="text-align:right;margin-top:8px"><button id="pdl">⬇ Download HTML</button> <button id="pclose" class="pri">Close</button></div>
+</dialog>
+
+<dialog id="vdlg">
+  <h3 style="margin-top:0">🎬 Video</h3>
+  <canvas id="vcv" width="720" height="1280"></canvas>
+  <div id="vst" class="sm" style="margin:6px 0"></div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+    <button id="vplay">▶ Voice shoho play</button>
+    <button id="vrec" class="pri">⏺ Record &amp; download</button>
+    <button id="vclose">Close</button>
+  </div>
+</dialog>
+
 <script>
 const $=id=>document.getElementById(id);
 const S={get:(k,d='')=>{try{return localStorage.getItem(k)||d}catch(e){return d}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
@@ -101,11 +125,15 @@ const PROVIDERS={
  custom_a:{n:'Custom (Anthropic-style)',t:'anthropic',base:'',models:[],help:'Anthropic-style proxy hole eta nao.'}
 };
 const BASE="Tumi 'FM Ai Mood', ekta powerful, bondhusulov AI assistant. User Bangladeshi, Banglish (Bangla English-e lekha) ba Bangla/English e kotha bole. User jei bhashay lekhe sei bhashay uttor dao. Uttor sohoj, short ar kajer moto rakho, mobile screen e porar upojogi. Kono kichu jana na thakle bhul tothyo banio na, sotti bolo.";
+const VIDEO_SPEC='Video banate hole shudhu ekta ```video-json code block dao (app er Video button theke video hoy). Format: {"ratio":"9:16","seconds":4,"brand":"optional","lang":"bn-BD","slides":[{"title":"..","text":"..","narration":"..","bg":["#hex1","#hex2"]}]}. 5 theke 10 ta slide, chhoto chhoto text, ratio 9:16 (Reels/Shorts) ba 16:9. Code block er por 1-2 line e bolo kibhabe video hobe.';
 const MODES={
  code:"Tumi expert software engineer. Complete, working code dao, code block e language shoho. Beshi explain na kore agey code, tarpor short note. Bug fix e kaaron bujhao. Website hole single-file HTML (Netlify ready) bhalo.",
  research:"Tumi researcher. Latest tothyo dite chesta koro, source mention koro, sure na hole bolo.",
  write:"Tumi expert writer (Bangla ar English). Post, caption, email, pitch, script, article likho. Natural ar manusher moto tone rakho.",
  biz:"Tumi online income coach, Bangladesh context e (Fiverr, Upwork, F-commerce, freelancing, AI service). Realistic, step-by-step plan dao, fake income promise dio na, scam bhalo bhabe chiniye dao.",
+ assistant:"Tumi user er personal assistant, sob kaj korte paro. Kaj onujayi format dao: (1) Website/landing page/design/poster/card/UI: ekta complete single-file ```html block (inline CSS/JS, mobile friendly), app e Preview button ase. (2) PDF/CV/letter/report/notes/plan: sundor formatted markdown dao, user message er niche 📄 PDF ba Word button chepe nibe. (3) Code/script: language shoho code block. (4) "+VIDEO_SPEC+" (5) Research/advice: short ar practical uttor. Kono kaj korte na parle sotti bolo ar ki kora jay seta bolo.",
+ video:"Tumi video script/slide designer. "+VIDEO_SPEC,
+ doc:"Tumi document writer. Resume, CV, letter, application, invoice, report, notes, plan sundor markdown e likho (heading ar list diye, clean). Shesh e bolo: niche 📄 PDF button chepe PDF save kora jay. Jekhane tothyo nai sekhane [Nam] moto placeholder dao.",
  general:"Tumi general helpful assistant."
 };
 
@@ -136,11 +164,12 @@ $('save').onclick=()=>{
 
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function inline(s){return esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,'<a style="color:var(--ac)" target="_blank" href="$2">$1</a>')}
+function xb(l){l=(l||'').toLowerCase();if(l==='html')return '<button data-a="prev">Preview</button>';if(l==='video-json'||l==='video')return '<button data-a="video">🎬 Video</button>';return ''}
 function md(t){
   const parts=t.split(/```/);let out='';
   parts.forEach((p,i)=>{
     if(i%2){const nl=p.indexOf('\n');const lang=(nl>-1?p.slice(0,nl):'').trim()||'code';const code=nl>-1?p.slice(nl+1):p;
-      out+=`<div class="cb"><div class="cbh"><span>${esc(lang)}</span><span><button data-a="copy">Copy</button><button data-a="dl" data-l="${esc(lang)}">Download</button></span></div><pre><code>${esc(code.replace(/\n$/,''))}</code></pre></div>`}
+      out+=`<div class="cb"><div class="cbh"><span>${esc(lang)}</span><span>${xb(lang)}<button data-a="copy">Copy</button><button data-a="dl" data-l="${esc(lang)}">Download</button></span></div><pre><code>${esc(code.replace(/\n$/,''))}</code></pre></div>`}
     else{
       let html='',list=null;
       const close=()=>{if(list){html+=`</${list}>`;list=null}};
@@ -161,7 +190,9 @@ function clearHint(){const h=chat.querySelector('.hint');if(h)h.remove()}
 chat.addEventListener('click',e=>{
   const b=e.target.closest('button[data-a]');if(!b)return;
   const code=b.closest('.cb').querySelector('code').textContent;
-  if(b.dataset.a==='copy'){navigator.clipboard.writeText(code).then(()=>{b.textContent='✓';setTimeout(()=>b.textContent='Copy',1200)}).catch(()=>{})}
+  if(b.dataset.a==='prev'){showPrev(code)}
+  else if(b.dataset.a==='video'){makeVideo(code)}
+  else if(b.dataset.a==='copy'){navigator.clipboard.writeText(code).then(()=>{b.textContent='✓';setTimeout(()=>b.textContent='Copy',1200)}).catch(()=>{})}
   else{const l=(b.dataset.l||'txt').toLowerCase();const ext={html:'html',python:'py',py:'py',javascript:'js',js:'js',css:'css',json:'json',bash:'sh',sh:'sh',typescript:'ts',ts:'ts'}[l]||'txt';
     const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([code],{type:'text/plain'}));a.download=(ext==='html'?'index':'file')+'.'+ext;a.click()}
 });
@@ -170,7 +201,7 @@ $('att').onclick=()=>$('file').click();
 $('file').onchange=e=>{const f=e.target.files[0];if(!f)return;
   const r=new FileReader();r.onload=()=>{img={mime:f.type,data:r.result.split(',')[1],url:r.result};$('prev').textContent='🖼️ '+f.name+' attached'};r.readAsDataURL(f);e.target.value=''};
 $('clr').onclick=()=>{hist=[];chat.innerHTML='<div class="hint">Chat clear hoyeche.</div>'};
-$('mode').value=S.get('mode','code');
+$('mode').value=S.get('mode','assistant');
 $('mode').onchange=()=>S.set('mode',$('mode').value);
 $('inp').addEventListener('input',e=>{e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,140)+'px'});
 $('send').onclick=send;
@@ -238,12 +269,112 @@ async function send(){
     if(!full)full='(Kono uttor ashe nai, abar try koro.)';
     out.innerHTML=md(full);
     hist.push({role:'assistant',text:full});
+    addBar(out,full);
   }catch(e){
     out.innerHTML='⚠️ '+esc(e.message||String(e));
     hist.pop();
   }
   busy=false;$('send').disabled=false;
 }
+
+// ---------- Preview ----------
+let lastHtml='';
+function dl(text,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:type||'text/plain'}));a.download=name;a.click()}
+function showPrev(h){lastHtml=h;$('pf').srcdoc=h;$('pdlg').showModal()}
+$('pclose').onclick=()=>{$('pdlg').close();$('pf').srcdoc=''};
+$('pdl').onclick=()=>dl(lastHtml,'index.html','text/html');
+
+// ---------- Message actions: PDF / Word ----------
+function cleanHtml(text){const d=document.createElement('div');d.innerHTML=md(text);d.querySelectorAll('.cbh').forEach(x=>x.remove());return d.innerHTML}
+const DOCCSS='body{font-family:"Noto Sans Bengali",system-ui,Arial,sans-serif;line-height:1.6;color:#111;margin:24px}h3{margin:14px 0 6px}pre{background:#f4f4f4;padding:10px;border-radius:6px;white-space:pre-wrap;font-size:12px}code{background:#f4f4f4;padding:1px 4px;border-radius:4px}@page{margin:16mm}';
+function printHtml(body){
+  const f=document.createElement('iframe');f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0';document.body.appendChild(f);
+  f.contentDocument.open();f.contentDocument.write('<!doctype html><meta charset="utf-8"><title>FM Ai Mood</title><style>'+DOCCSS+'</style>'+body);f.contentDocument.close();
+  setTimeout(()=>{f.contentWindow.focus();f.contentWindow.print();setTimeout(()=>f.remove(),60000)},400);
+}
+function addBar(el,text){
+  const b=document.createElement('div');b.className='bar';
+  b.innerHTML='<button data-b="pdf">📄 PDF</button><button data-b="doc">⬇ Word</button><button data-b="md">⬇ .md</button><button data-b="cp">Copy</button>';
+  b.onclick=e=>{const k=e.target.dataset.b;if(!k)return;
+    if(k==='pdf')printHtml(cleanHtml(text));
+    else if(k==='doc')dl('<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>'+DOCCSS+'</style></head><body>'+cleanHtml(text)+'</body></html>','document.doc','application/msword');
+    else if(k==='md')dl(text,'document.md');
+    else navigator.clipboard.writeText(text).then(()=>{e.target.textContent='✓';setTimeout(()=>e.target.textContent='Copy',1200)}).catch(()=>{});
+  };
+  el.appendChild(b);chat.scrollTop=chat.scrollHeight;
+}
+
+// ---------- Video maker (canvas + MediaRecorder) ----------
+const PAL=[['#6a11cb','#2575fc'],['#f7971e','#ff512f'],['#11998e','#38ef7d'],['#ee0979','#ff6a00'],['#141e30','#243b55'],['#8e2de2','#4a00e0']];
+let VJ=null,vBusy=false,vCancel=false;
+function parseVJ(code){try{return JSON.parse(code)}catch(e){const m=code.match(/\{[\s\S]*\}/);if(m){try{return JSON.parse(m[0])}catch(e2){}}}return null}
+function makeVideo(code){
+  const v=parseVJ(code);
+  if(!v||!Array.isArray(v.slides)||!v.slides.length){alert('Video JSON thik na. AI ke abar generate korte bolo.');return}
+  VJ=v;
+  const cv=$('vcv'),land=v.ratio==='16:9';cv.width=land?1280:720;cv.height=land?720:1280;
+  drawSlide(cv.getContext('2d'),cv.width,cv.height,v.slides[0],0.5,0,v.slides.length,v.brand);
+  $('vst').textContent=v.slides.length+' ta slide. Record korle voice thakbe na (browser limit). Voice chaile "Voice shoho play" chepe screen record koro.';
+  $('vdlg').showModal();
+}
+function wrap(ctx,t,maxW){const words=String(t||'').split(/\s+/);const lines=[];let cur='';for(const w of words){const test=cur?cur+' '+w:w;if(ctx.measureText(test).width>maxW&&cur){lines.push(cur);cur=w}else cur=test}if(cur)lines.push(cur);return lines}
+function drawSlide(ctx,W,H,s,p,i,n,brand){
+  const cols=(Array.isArray(s.bg)&&s.bg.length>=2)?s.bg:PAL[i%PAL.length];
+  const g=ctx.createLinearGradient(0,0,W,H);g.addColorStop(0,cols[0]);g.addColorStop(1,cols[1]);
+  ctx.globalAlpha=1;ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  const inP=Math.min(1,p*5),outP=p>0.93?(1-p)/0.07:1;
+  const ff='"Noto Sans Bengali",system-ui,sans-serif';
+  const tS=Math.round(W*0.075),bS=Math.round(W*0.048),maxW=W*0.84;
+  ctx.textAlign='center';ctx.textBaseline='top';ctx.fillStyle='#fff';
+  ctx.font='bold '+tS+'px '+ff;const tl=s.title?wrap(ctx,s.title,maxW):[];
+  ctx.font=bS+'px '+ff;const bl=s.text?wrap(ctx,s.text,maxW):[];
+  const th=tl.length*tS*1.3,bh=bl.length*bS*1.45,gap=tl.length&&bl.length?bS:0;
+  let y=(H-(th+gap+bh))/2+(1-inP)*40;
+  ctx.globalAlpha=Math.max(0,inP*outP);
+  ctx.font='bold '+tS+'px '+ff;tl.forEach(l=>{ctx.fillText(l,W/2,y);y+=tS*1.3});
+  y+=gap;ctx.font=bS+'px '+ff;ctx.globalAlpha=Math.max(0,inP*outP*0.92);bl.forEach(l=>{ctx.fillText(l,W/2,y);y+=bS*1.45});
+  ctx.globalAlpha=0.6;ctx.font=Math.round(W*0.034)+'px '+ff;ctx.textBaseline='bottom';
+  if(brand)ctx.fillText(brand,W/2,H-W*0.07);
+  ctx.globalAlpha=0.5;ctx.fillStyle='#fff';ctx.fillRect(0,H-8,W*((i+p)/n),8);ctx.globalAlpha=1;
+}
+async function runVideo(record,speak){
+  if(vBusy||!VJ)return;
+  if(record&&!window.MediaRecorder){alert('Ei browser e recording support nai. Chrome use koro.');return}
+  vBusy=true;vCancel=false;
+  const cv=$('vcv'),ctx=cv.getContext('2d'),W=cv.width,H=cv.height,n=VJ.slides.length;
+  let rec=null,chunks=[],mt='';
+  if(record){
+    mt=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(t=>MediaRecorder.isTypeSupported(t))||'';
+    rec=new MediaRecorder(cv.captureStream(30),mt?{mimeType:mt,videoBitsPerSecond:4000000}:{});
+    rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};rec.start();
+  }
+  for(let i=0;i<n&&!vCancel;i++){
+    const s=VJ.slides[i],dur=(Number(s.seconds)||Number(VJ.seconds)||4)*1000;
+    let spDone=!speak;
+    if(speak&&window.speechSynthesis){
+      spDone=false;
+      new Promise(r=>{const u=new SpeechSynthesisUtterance(s.narration||[s.title,s.text].filter(Boolean).join('. '));u.lang=VJ.lang||'bn-BD';u.onend=r;u.onerror=r;setTimeout(r,20000);speechSynthesis.speak(u)}).then(()=>{spDone=true});
+    }else spDone=true;
+    const t0=performance.now();
+    while(!vCancel){
+      const el=performance.now()-t0;
+      if(el>=dur&&spDone)break;
+      drawSlide(ctx,W,H,s,Math.min(el/dur,1),i,n,VJ.brand);
+      $('vst').textContent='Slide '+(i+1)+'/'+n+(record?' (recording...)':'');
+      await new Promise(r=>requestAnimationFrame(r));
+    }
+  }
+  if(window.speechSynthesis)speechSynthesis.cancel();
+  if(rec){
+    await new Promise(r=>{rec.onstop=r;rec.stop()});
+    if(!vCancel){dl(new Blob(chunks,{type:mt||'video/webm'}),'fm-ai-mood-video.webm','video/webm');$('vst').textContent='✅ Video download hoyeche (.webm)'}
+  }else $('vst').textContent=vCancel?'Stopped.':'Done.';
+  vBusy=false;
+}
+$('vrec').onclick=()=>runVideo(true,false);
+$('vplay').onclick=()=>runVideo(false,true);
+$('vclose').onclick=()=>{vCancel=true;if(window.speechSynthesis)speechSynthesis.cancel();$('vdlg').close()};
+$('vdlg').addEventListener('close',()=>{vCancel=true});
 </script>
 </body>
 </html>
