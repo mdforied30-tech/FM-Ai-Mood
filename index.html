@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FM Ai Mood</title>
+<style>
+:root{--bg:#0f1115;--card:#181b22;--bd:#2a2f3a;--tx:#e8eaf0;--mut:#8b93a5;--ac:#d97757;--ac2:#7c5cff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Noto Sans Bengali",sans-serif;height:100dvh;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--bd);background:var(--card);flex-wrap:wrap}
+header h1{font-size:17px;margin:0;flex:1;white-space:nowrap}
+header h1 span{color:var(--ac)}
+select,button,input,textarea{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:7px 10px}
+button{cursor:pointer}
+button.pri{background:var(--ac);border-color:var(--ac);color:#fff}
+#chat{flex:1;overflow-y:auto;padding:14px 12px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:94%;padding:10px 13px;border-radius:14px;line-height:1.55;word-wrap:break-word;overflow-wrap:anywhere}
+.user{align-self:flex-end;background:var(--ac2);color:#fff}
+.bot{align-self:flex-start;background:var(--card);border:1px solid var(--bd)}
+.msg img{max-width:200px;border-radius:8px;display:block;margin-bottom:6px}
+.msg p{margin:0 0 8px}.msg p:last-child{margin:0}
+.msg h3{margin:8px 0 6px;font-size:16px}
+.msg ul,.msg ol{margin:4px 0 8px;padding-left:20px}
+code{background:#0b0d11;padding:1px 5px;border-radius:5px;font-size:.9em}
+.cb{background:#0b0d11;border:1px solid var(--bd);border-radius:10px;margin:8px 0;overflow:hidden}
+.cbh{display:flex;justify-content:space-between;align-items:center;padding:4px 8px;background:#14171d;font-size:12px;color:var(--mut)}
+.cbh button{padding:2px 8px;font-size:12px;margin-left:4px}
+.cb pre{margin:0;padding:10px;overflow-x:auto;font-size:13px}
+.cb code{background:none;padding:0}
+footer{padding:8px 10px;border-top:1px solid var(--bd);background:var(--card)}
+#row{display:flex;gap:6px;align-items:flex-end}
+#inp{flex:1;resize:none;max-height:140px;min-height:42px}
+#prev{font-size:12px;color:var(--mut);padding:0 4px 4px}
+.hint{color:var(--mut);font-size:13px;text-align:center;margin:auto;padding:20px}
+dialog{background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:14px;max-width:440px;width:94%;max-height:90dvh;overflow-y:auto}
+dialog input,dialog textarea,dialog select{width:100%;margin:4px 0 10px}
+dialog label{font-size:13px;color:var(--mut)}
+dialog::backdrop{background:#000a}
+.sm{font-size:12px;color:var(--mut)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧠 FM Ai <span>Mood</span></h1>
+  <select id="mode">
+    <option value="code">💻 Coding</option>
+    <option value="research">🔎 Research</option>
+    <option value="write">✍️ Writing</option>
+    <option value="biz">💰 Online Income</option>
+    <option value="general">💬 General</option>
+  </select>
+  <button id="setb">⚙️</button>
+  <button id="clr">🗑️</button>
+</header>
+
+<div id="chat"><div class="hint">👋 Ami FM Ai Mood.<br>Coding, research, lekha, business idea, image analysis, sob e help kori.<br>Prothome ⚙️ e tomar API provider ar key boshao.</div></div>
+
+<footer>
+  <div id="prev"></div>
+  <div id="row">
+    <button id="att">📎</button>
+    <input type="file" id="file" accept="image/*" hidden>
+    <textarea id="inp" rows="1" placeholder="Ekhane lekho..."></textarea>
+    <button id="send" class="pri">➤</button>
+  </div>
+</footer>
+
+<dialog id="dlg">
+  <h3 style="margin-top:0">⚙️ Settings</h3>
+  <label>Provider</label>
+  <select id="prov"></select>
+  <label>Base URL <span class="sm">(onno kono API hole eta change koro)</span></label>
+  <input id="base" placeholder="https://.../v1">
+  <label>API key</label>
+  <input id="key" type="password" placeholder="sk-... / AIza...">
+  <label>Model name <span class="sm">(provider er model id)</span></label>
+  <input id="model" list="mlist" placeholder="model name">
+  <datalist id="mlist"></datalist>
+  <div id="help" class="sm" style="margin:-4px 0 10px"></div>
+  <label>Extra instruction (optional)</label>
+  <textarea id="extra" rows="2" placeholder="Jemon: sob uttor Banglish e dao"></textarea>
+  <p class="sm">Key ta shudhu tomar browser e thake (localStorage). Request shorashori tomar choose kora provider er server e jay. Unknown/reseller API te sensitive kichu likho na.</p>
+  <div style="text-align:right"><button id="close">Cancel</button> <button id="save" class="pri">Save</button></div>
+</dialog>
+
+<script>
+const $=id=>document.getElementById(id);
+const S={get:(k,d='')=>{try{return localStorage.getItem(k)||d}catch(e){return d}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
+
+// type: gemini | openai | anthropic
+const PROVIDERS={
+ gemini:{n:'Google Gemini (AI Studio, free)',t:'gemini',base:'https://generativelanguage.googleapis.com/v1beta',models:['gemini-2.5-flash','gemini-2.5-pro','gemini-2.5-flash-lite'],help:'Free key: aistudio.google.com/apikey'},
+ openrouter:{n:'OpenRouter (free models ache)',t:'openai',base:'https://openrouter.ai/api/v1',models:['deepseek/deepseek-chat-v3.1:free','qwen/qwen3-coder:free','meta-llama/llama-3.3-70b-instruct:free'],help:'Key: openrouter.ai/keys. Model name er sheshe :free thakle free.'},
+ groq:{n:'Groq (fast, free tier)',t:'openai',base:'https://api.groq.com/openai/v1',models:['llama-3.3-70b-versatile','qwen/qwen3-32b'],help:'Key: console.groq.com/keys'},
+ mistral:{n:'Mistral (free tier)',t:'openai',base:'https://api.mistral.ai/v1',models:['mistral-large-latest','codestral-latest'],help:'Key: console.mistral.ai'},
+ deepseek:{n:'DeepSeek',t:'openai',base:'https://api.deepseek.com/v1',models:['deepseek-chat','deepseek-reasoner'],help:'Key: platform.deepseek.com'},
+ openai:{n:'OpenAI',t:'openai',base:'https://api.openai.com/v1',models:['gpt-4o-mini','gpt-4o'],help:'Key: platform.openai.com'},
+ anthropic:{n:'Anthropic (Claude, official)',t:'anthropic',base:'https://api.anthropic.com/v1',models:['claude-sonnet-4-5','claude-haiku-4-5'],help:'Key: console.anthropic.com. Model name console e check koro.'},
+ custom:{n:'Custom (OpenAI-compatible, jekono API)',t:'openai',base:'',models:[],help:'Jekono OpenAI-style API: Base URL + key + model name dao.'},
+ custom_a:{n:'Custom (Anthropic-style)',t:'anthropic',base:'',models:[],help:'Anthropic-style proxy hole eta nao.'}
+};
+const BASE="Tumi 'FM Ai Mood', ekta powerful, bondhusulov AI assistant. User Bangladeshi, Banglish (Bangla English-e lekha) ba Bangla/English e kotha bole. User jei bhashay lekhe sei bhashay uttor dao. Uttor sohoj, short ar kajer moto rakho, mobile screen e porar upojogi. Kono kichu jana na thakle bhul tothyo banio na, sotti bolo.";
+const MODES={
+ code:"Tumi expert software engineer. Complete, working code dao, code block e language shoho. Beshi explain na kore agey code, tarpor short note. Bug fix e kaaron bujhao. Website hole single-file HTML (Netlify ready) bhalo.",
+ research:"Tumi researcher. Latest tothyo dite chesta koro, source mention koro, sure na hole bolo.",
+ write:"Tumi expert writer (Bangla ar English). Post, caption, email, pitch, script, article likho. Natural ar manusher moto tone rakho.",
+ biz:"Tumi online income coach, Bangladesh context e (Fiverr, Upwork, F-commerce, freelancing, AI service). Realistic, step-by-step plan dao, fake income promise dio na, scam bhalo bhabe chiniye dao.",
+ general:"Tumi general helpful assistant."
+};
+
+// neutral history: {role:'user'|'assistant', text, img?:{mime,data}}
+let hist=[],img=null,busy=false;
+
+function cfg(){
+  const p=S.get('prov','gemini');
+  return {p,base:S.get('base_'+p,PROVIDERS[p].base),key:S.get('key_'+p),model:S.get('model_'+p,(PROVIDERS[p].models[0]||''))};
+}
+function fillSettings(p){
+  const P=PROVIDERS[p];
+  $('base').value=S.get('base_'+p,P.base);
+  $('key').value=S.get('key_'+p);
+  $('model').value=S.get('model_'+p,P.models[0]||'');
+  $('mlist').innerHTML=P.models.map(m=>`<option value="${m}">`).join('');
+  $('help').textContent=P.help;
+}
+$('prov').innerHTML=Object.entries(PROVIDERS).map(([k,v])=>`<option value="${k}">${v.n}</option>`).join('');
+$('prov').onchange=()=>fillSettings($('prov').value);
+$('setb').onclick=()=>{$('prov').value=S.get('prov','gemini');fillSettings($('prov').value);$('extra').value=S.get('extra');$('dlg').showModal()};
+$('close').onclick=()=>$('dlg').close();
+$('save').onclick=()=>{
+  const p=$('prov').value;
+  S.set('prov',p);S.set('base_'+p,$('base').value.trim().replace(/\/+$/,''));S.set('key_'+p,$('key').value.trim());S.set('model_'+p,$('model').value.trim());S.set('extra',$('extra').value.trim());
+  $('dlg').close();
+};
+
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function inline(s){return esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,'<a style="color:var(--ac)" target="_blank" href="$2">$1</a>')}
+function md(t){
+  const parts=t.split(/```/);let out='';
+  parts.forEach((p,i)=>{
+    if(i%2){const nl=p.indexOf('\n');const lang=(nl>-1?p.slice(0,nl):'').trim()||'code';const code=nl>-1?p.slice(nl+1):p;
+      out+=`<div class="cb"><div class="cbh"><span>${esc(lang)}</span><span><button data-a="copy">Copy</button><button data-a="dl" data-l="${esc(lang)}">Download</button></span></div><pre><code>${esc(code.replace(/\n$/,''))}</code></pre></div>`}
+    else{
+      let html='',list=null;
+      const close=()=>{if(list){html+=`</${list}>`;list=null}};
+      p.split('\n').forEach(l=>{
+        let m;
+        if(m=l.match(/^\s*[-*]\s+(.*)/)){if(list!=='ul'){close();html+='<ul>';list='ul'}html+=`<li>${inline(m[1])}</li>`}
+        else if(m=l.match(/^\s*\d+[.)]\s+(.*)/)){if(list!=='ol'){close();html+='<ol>';list='ol'}html+=`<li>${inline(m[1])}</li>`}
+        else if(m=l.match(/^#{1,3}\s+(.*)/)){close();html+=`<h3>${inline(m[1])}</h3>`}
+        else if(l.trim()===''){close()}
+        else{close();html+=`<p>${inline(l)}</p>`}
+      });close();out+=html}
+  });return out;
+}
+const chat=$('chat');
+function add(cls,html){const d=document.createElement('div');d.className='msg '+cls;d.innerHTML=html;chat.appendChild(d);chat.scrollTop=chat.scrollHeight;return d}
+function clearHint(){const h=chat.querySelector('.hint');if(h)h.remove()}
+
+chat.addEventListener('click',e=>{
+  const b=e.target.closest('button[data-a]');if(!b)return;
+  const code=b.closest('.cb').querySelector('code').textContent;
+  if(b.dataset.a==='copy'){navigator.clipboard.writeText(code).then(()=>{b.textContent='✓';setTimeout(()=>b.textContent='Copy',1200)}).catch(()=>{})}
+  else{const l=(b.dataset.l||'txt').toLowerCase();const ext={html:'html',python:'py',py:'py',javascript:'js',js:'js',css:'css',json:'json',bash:'sh',sh:'sh',typescript:'ts',ts:'ts'}[l]||'txt';
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([code],{type:'text/plain'}));a.download=(ext==='html'?'index':'file')+'.'+ext;a.click()}
+});
+
+$('att').onclick=()=>$('file').click();
+$('file').onchange=e=>{const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();r.onload=()=>{img={mime:f.type,data:r.result.split(',')[1],url:r.result};$('prev').textContent='🖼️ '+f.name+' attached'};r.readAsDataURL(f);e.target.value=''};
+$('clr').onclick=()=>{hist=[];chat.innerHTML='<div class="hint">Chat clear hoyeche.</div>'};
+$('mode').value=S.get('mode','code');
+$('mode').onchange=()=>S.set('mode',$('mode').value);
+$('inp').addEventListener('input',e=>{e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,140)+'px'});
+$('send').onclick=send;
+
+// Each caller returns an async generator of text chunks.
+async function* sse(res){
+  const rd=res.body.getReader(),dec=new TextDecoder();let buf='';
+  while(true){
+    const {done,value}=await rd.read();if(done)break;
+    buf+=dec.decode(value,{stream:true});
+    const lines=buf.split('\n');buf=lines.pop();
+    for(const l of lines){if(l.startsWith('data:')){const d=l.slice(5).trim();if(d&&d!=='[DONE]')yield d}}
+  }
+}
+async function fail(res){
+  let m='Error '+res.status;
+  try{const j=await res.json();m=(j.error&&(j.error.message||j.error))||j.message||JSON.stringify(j)}catch(e){}
+  if(res.status===429)m='Rate limit / quota shesh. Ektu pore try koro ba onno model/provider nao. ('+m+')';
+  if(res.status===401||res.status===403)m='Key thik na ba permission nai. ('+m+')';
+  throw new Error(typeof m==='string'?m:JSON.stringify(m));
+}
+
+async function* callGemini(c,sys,mode){
+  const contents=hist.slice(-20).map(m=>({role:m.role==='user'?'user':'model',parts:[...(m.img?[{inlineData:{mimeType:m.img.mime,data:m.img.data}}]:[]),{text:m.text}]}));
+  const body={systemInstruction:{parts:[{text:sys}]},contents};
+  if(mode==='research')body.tools=[{google_search:{}}];
+  const res=await fetch(`${c.base}/models/${encodeURIComponent(c.model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(c.key)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!res.ok)await fail(res);
+  for await(const d of sse(res)){try{const j=JSON.parse(d);const t=(j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('');if(t)yield t}catch(e){}}
+}
+async function* callOpenAI(c,sys){
+  const messages=[{role:'system',content:sys},...hist.slice(-20).map(m=>({role:m.role,content:m.img?[{type:'image_url',image_url:{url:`data:${m.img.mime};base64,${m.img.data}`}},{type:'text',text:m.text}]:m.text}))];
+  const res=await fetch(c.base+'/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.key},body:JSON.stringify({model:c.model,messages,stream:true})});
+  if(!res.ok)await fail(res);
+  for await(const d of sse(res)){try{const j=JSON.parse(d);const t=j.choices?.[0]?.delta?.content;if(t)yield t}catch(e){}}
+}
+async function* callAnthropic(c,sys){
+  const messages=hist.slice(-20).map(m=>({role:m.role,content:m.img?[{type:'image',source:{type:'base64',media_type:m.img.mime,data:m.img.data}},{type:'text',text:m.text}]:m.text}));
+  const res=await fetch(c.base+'/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':c.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:c.model,max_tokens:4096,system:sys,messages,stream:true})});
+  if(!res.ok)await fail(res);
+  for await(const d of sse(res)){try{const j=JSON.parse(d);if(j.type==='content_block_delta'&&j.delta?.text)yield j.delta.text}catch(e){}}
+}
+
+async function send(){
+  if(busy)return;
+  const c=cfg();
+  if(!c.key||!c.base||!c.model){$('setb').click();return}
+  const text=$('inp').value.trim();
+  if(!text&&!img)return;
+  clearHint();
+  const msg={role:'user',text:text||'Ei image ta analyze koro.'};
+  if(img)msg.img={mime:img.mime,data:img.data};
+  add('user',(img?`<img src="${img.url}">`:'')+esc(text).replace(/\n/g,'<br>'));
+  hist.push(msg);
+  $('inp').value='';$('inp').style.height='auto';img=null;$('prev').textContent='';
+  const mode=$('mode').value;
+  const sys=BASE+'\n'+MODES[mode]+(S.get('extra')?'\nUser instruction: '+S.get('extra'):'');
+  const out=add('bot','<i style="color:var(--mut)">Bhabchi...</i>');
+  busy=true;$('send').disabled=true;
+  let full='';
+  try{
+    const t=PROVIDERS[c.p].t;
+    const gen=t==='gemini'?callGemini(c,sys,mode):t==='anthropic'?callAnthropic(c,sys):callOpenAI(c,sys);
+    for await(const chunk of gen){full+=chunk;out.innerHTML=md(full);chat.scrollTop=chat.scrollHeight}
+    if(!full)full='(Kono uttor ashe nai, abar try koro.)';
+    out.innerHTML=md(full);
+    hist.push({role:'assistant',text:full});
+  }catch(e){
+    out.innerHTML='⚠️ '+esc(e.message||String(e));
+    hist.pop();
+  }
+  busy=false;$('send').disabled=false;
+}
+</script>
+</body>
+</html>
