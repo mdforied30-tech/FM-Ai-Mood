@@ -46,6 +46,14 @@ th,td{border:1px solid var(--bd);padding:4px 8px;text-align:left}
 th{background:#14171d}
 #mic.on{background:#c0392b;border-color:#c0392b}
 #mode{flex:1 0 100%}
+header button{padding:6px 9px}
+.think{margin-bottom:8px;border:1px dashed var(--bd);border-radius:10px;padding:6px 10px;font-size:13px;color:var(--mut)}
+.think summary{cursor:pointer}
+.think .tb{white-space:pre-wrap;margin-top:6px;max-height:180px;overflow-y:auto}
+.msg .st{font-size:11px;color:var(--mut);margin-top:6px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:14px}
+.chip{font-size:12px;padding:6px 11px;border-radius:16px}
+.toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:var(--card);border:1px solid var(--bd);padding:8px 14px;border-radius:20px;font-size:13px;z-index:99}
 .hi{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid var(--bd);border-radius:10px;margin-bottom:6px;cursor:pointer}
 .hi.cur{border-color:var(--ac)}
 .hi .t{flex:1;min-width:0}
@@ -60,6 +68,7 @@ th{background:#14171d}
 <body>
 <header>
   <h1>🧠 FM Ai <span>Mood</span></h1>
+  <button id="spdb" title="Speed">⚡</button>
   <button id="newb" title="Notun chat">➕</button>
   <button id="histb" title="Chat history">📜</button>
   <button id="setb">⚙️</button>
@@ -177,8 +186,8 @@ async function oneShot(c,sys,prompt){
   try{
     const t=PROVIDERS[c.p].t;
     const gen=t==='gemini'?callGemini(c,sys,'general'):t==='anthropic'?callAnthropic(c,sys):callOpenAI(c,sys);
-    let full='';for await(const ch of gen)full+=ch;return full.trim();
-  }finally{CTX=hold}
+    let full='';for await(const ch of gen)if(typeof ch==='string')full+=ch;return full.trim();
+  }finally{CTX=null}
 }
 async function summarize(c,prev,msgs){
   const BUD=getBudget(),chunkMax=Math.floor(BUD*0.6);
@@ -196,27 +205,33 @@ async function summarize(c,prev,msgs){
   await flush();
   return sum;
 }
-async function prepareContext(c,sys,out){
+function prepareContext(sys){
   const BUD=getBudget();
-  const uncovered=hist.slice(CURSUM.upto);
-  let tot=uncovered.reduce((a,m)=>a+clen(m),0);
-  if(tot>BUD){
-    let acc=0,k=hist.length;
-    for(let i=hist.length-1;i>=CURSUM.upto;i--){acc+=clen(hist[i]);if(acc>BUD*0.5)break;k=i}
-    k=Math.min(k,hist.length-1);
-    while(k<hist.length-1&&hist[k].role!=='user')k++;
-    const toSum=hist.slice(CURSUM.upto,k);
-    if(toSum.length){
-      out.innerHTML='<i style="color:var(--mut)">Purono message gulo mone rakhchi (summary toiri hocche)...</i>';
-      try{CURSUM={text:await summarize(c,CURSUM.text,toSum),upto:k}}
-      catch(e){if(e.name==='AbortError')throw e}
-    }
-  }
   let win=hist.slice(CURSUM.upto);
   let wt=win.reduce((a,m)=>a+clen(m),0);
   while(win.length>1&&wt>BUD*1.3){wt-=clen(win[0]);win=win.slice(1)}
+  const last=win.length-1;
+  win=win.map((m,i)=>(i===last||!m.img)?m:{role:m.role,text:m.text+'\n[user ekta image pathiyechilo]'});
   const sys2=sys+(CURSUM.text?'\n\n[USER er sathe ager shob kothar summary. Eta tomar memory, shob mone rakho ar proyojone use koro]\n'+CURSUM.text:'');
   return {sys:sys2,msgs:win};
+}
+let SUMMING=false;
+async function maintainSummary(c){
+  if(SUMMING||busy)return;
+  const BUD=getBudget(),ref=hist,id=CUR,upto0=CURSUM.upto;
+  const unc=ref.slice(upto0);
+  if(unc.reduce((a,m)=>a+clen(m),0)<=BUD)return;
+  let acc=0,k=ref.length;
+  for(let i=ref.length-1;i>=upto0;i--){acc+=clen(ref[i]);if(acc>BUD*0.5)break;k=i}
+  k=Math.min(k,ref.length-2);
+  while(k<ref.length-2&&ref[k].role!=='user')k++;
+  if(k<=upto0)return;
+  SUMMING=true;
+  try{
+    const sum=await summarize(c,CURSUM.text,ref.slice(upto0,k));
+    if(hist===ref&&CUR===id&&CURSUM.upto===upto0){CURSUM={text:sum,upto:k};saveChat()}
+  }catch(e){}
+  SUMMING=false;
 }
 
 function cfg(){
@@ -284,8 +299,18 @@ chat.addEventListener('click',e=>{
 });
 
 $('att').onclick=()=>$('file').click();
-$('file').onchange=e=>{const f=e.target.files[0];if(!f)return;
-  const r=new FileReader();r.onload=()=>{img={mime:f.type,data:r.result.split(',')[1],url:r.result};$('prev').textContent='🖼️ '+f.name+' attached'};r.readAsDataURL(f);e.target.value=''};
+$('file').onchange=e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    const done=url=>{img={mime:url.slice(5,url.indexOf(';')),data:url.split(',')[1],url};$('prev').textContent='🖼️ '+f.name+' attached'};
+    const im=new Image();
+    im.onload=()=>{try{const sc=Math.min(1,1280/Math.max(im.width,im.height));const cv=document.createElement('canvas');cv.width=Math.max(1,Math.round(im.width*sc));cv.height=Math.max(1,Math.round(im.height*sc));cv.getContext('2d').drawImage(im,0,0,cv.width,cv.height);done(cv.toDataURL('image/jpeg',0.82))}catch(x){done(r.result)}};
+    im.onerror=()=>done(r.result);
+    im.src=r.result;
+  };
+  r.readAsDataURL(f);
+};
 $('newb').onclick=()=>newChat();$('histb').onclick=()=>openHist();
 $('mode').value=S.get('mode','assistant');
 $('mode').onchange=()=>S.set('mode',$('mode').value);
@@ -311,25 +336,41 @@ async function fail(res){
   throw new Error(typeof m==='string'?m:JSON.stringify(m));
 }
 
+function geminiCfg(m,spd){
+  if(!/gemini-(2\.5|3)/.test(m))return null;
+  const lite=/lite/.test(m);
+  if(spd==='smart')return {thinkingConfig:lite?{includeThoughts:true,thinkingBudget:-1}:{includeThoughts:true}};
+  if(/2\.5-flash/.test(m)&&!lite)return {thinkingConfig:{thinkingBudget:0}};
+  return null;
+}
 async function* callGemini(c,sys,mode){
   const contents=recent().map(m=>({role:m.role==='user'?'user':'model',parts:[...(m.img?[{inlineData:{mimeType:m.img.mime,data:m.img.data}}]:[]),{text:m.text}]}));
   const body={systemInstruction:{parts:[{text:sys}]},contents};
   if(mode==='research')body.tools=[{google_search:{}}];
-  const res=await fetch(`${c.base}/models/${encodeURIComponent(c.model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(c.key)}`,{signal:ABORT&&ABORT.signal,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const gc=geminiCfg(c.model,S.get('spd','fast'));
+  if(gc)body.generationConfig=gc;
+  const url=`${c.base}/models/${encodeURIComponent(c.model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(c.key)}`;
+  const go=()=>fetch(url,{signal:ABORT&&ABORT.signal,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  let res=await go();
+  if(!res.ok&&gc&&res.status===400){delete body.generationConfig;res=await go()}
   if(!res.ok)await fail(res);
-  for await(const d of sse(res)){try{const j=JSON.parse(d);const t=(j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('');if(t)yield t}catch(e){}}
+  for await(const d of sse(res)){try{const j=JSON.parse(d);for(const p of (j.candidates?.[0]?.content?.parts||[])){if(!p.text)continue;if(p.thought)yield {think:p.text};else yield p.text}}catch(e){}}
 }
 async function* callOpenAI(c,sys){
   const messages=[{role:'system',content:sys},...recent().map(m=>({role:m.role,content:m.img?[{type:'image_url',image_url:{url:`data:${m.img.mime};base64,${m.img.data}`}},{type:'text',text:m.text}]:m.text}))];
   const res=await fetch(c.base+'/chat/completions',{signal:ABORT&&ABORT.signal,method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+c.key},body:JSON.stringify({model:c.model,messages,stream:true})});
   if(!res.ok)await fail(res);
-  for await(const d of sse(res)){try{const j=JSON.parse(d);const t=j.choices?.[0]?.delta?.content;if(t)yield t}catch(e){}}
+  for await(const d of sse(res)){try{const j=JSON.parse(d);const dl=j.choices?.[0]?.delta;if(!dl)continue;const r=dl.reasoning_content||dl.reasoning;if(r)yield {think:r};if(dl.content)yield dl.content}catch(e){}}
 }
 async function* callAnthropic(c,sys){
   const messages=recent().map(m=>({role:m.role,content:m.img?[{type:'image',source:{type:'base64',media_type:m.img.mime,data:m.img.data}},{type:'text',text:m.text}]:m.text}));
-  const res=await fetch(c.base+'/messages',{signal:ABORT&&ABORT.signal,method:'POST',headers:{'Content-Type':'application/json','x-api-key':c.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:c.model,max_tokens:4096,system:sys,messages,stream:true})});
+  const smart=S.get('spd','fast')==='smart';
+  const mk=th=>JSON.stringify(th?{model:c.model,max_tokens:8000,thinking:{type:'enabled',budget_tokens:3000},system:sys,messages,stream:true}:{model:c.model,max_tokens:4096,system:sys,messages,stream:true});
+  const go=th=>fetch(c.base+'/messages',{signal:ABORT&&ABORT.signal,method:'POST',headers:{'Content-Type':'application/json','x-api-key':c.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:mk(th)});
+  let res=await go(smart);
+  if(!res.ok&&smart&&res.status===400)res=await go(false);
   if(!res.ok)await fail(res);
-  for await(const d of sse(res)){try{const j=JSON.parse(d);if(j.type==='content_block_delta'&&j.delta?.text)yield j.delta.text}catch(e){}}
+  for await(const d of sse(res)){try{const j=JSON.parse(d);if(j.type==='content_block_delta'){if(j.delta?.type==='thinking_delta'&&j.delta.thinking)yield {think:j.delta.thinking};else if(j.delta?.text)yield j.delta.text}}catch(e){}}
 }
 
 async function send(){
@@ -347,26 +388,63 @@ async function send(){
   const mode=$('mode').value;
   if(mode==='image'){hist.pop();await imageFlow(msg.text);return}
   const sys=BASE+'\n'+MODES[mode]+(S.get('extra')?'\nUser instruction: '+S.get('extra'):'');
-  const out=add('bot','<i style="color:var(--mut)">Bhabchi...</i>');
+  const out=add('bot','');
+  const thEl=document.createElement('details');thEl.className='think';thEl.style.display='none';thEl.open=true;
+  thEl.innerHTML='<summary>🧠 Analysis</summary><div class="tb"></div>';
+  const tb=thEl.lastChild;
+  const anEl=document.createElement('div');
+  const stEl=document.createElement('div');stEl.className='st';
+  out.append(thEl,anEl,stEl);
   busy=true;ABORT=new AbortController();$('send').textContent='■';
-  let full='';
+  const T0=performance.now(),secs=()=>((performance.now()-T0)/1000).toFixed(1);
+  let gotAny=false,tAns=0,full='',think='',dirty=false,raf=0;
+  stEl.textContent='⏳ 0.0s';
+  const tick=setInterval(()=>{if(!gotAny)stEl.textContent='⏳ '+secs()+'s'},100);
+  const near=()=>chat.scrollHeight-chat.scrollTop-chat.clientHeight<160;
+  const paint=()=>{raf=0;if(!dirty)return;dirty=false;const n=near();anEl.innerHTML=md(full);tb.textContent=think;if(n)chat.scrollTop=chat.scrollHeight};
+  const sched=()=>{dirty=true;if(!raf)raf=requestAnimationFrame(paint)};
   try{
     const t=PROVIDERS[c.p].t;
-    const px=await prepareContext(c,sys,out);
+    const px=prepareContext(sys);
     CTX=px.msgs;
-    out.innerHTML='<i style="color:var(--mut)">Bhabchi...</i>';
     const gen=t==='gemini'?callGemini(c,px.sys,mode):t==='anthropic'?callAnthropic(c,px.sys):callOpenAI(c,px.sys);
-    for await(const chunk of gen){full+=chunk;out.innerHTML=md(full);chat.scrollTop=chat.scrollHeight}
+    for await(const chunk of gen){
+      if(typeof chunk==='string'){
+        if(!tAns){tAns=performance.now()-T0;gotAny=true;thEl.open=false;stEl.textContent='⚡ '+(tAns/1000).toFixed(1)+'s e shuru'}
+        full+=chunk;sched();
+      }else if(chunk&&chunk.think){
+        gotAny=true;thEl.style.display='';think+=chunk.think;stEl.textContent='🧠 Analysis kortechi... '+secs()+'s';sched();
+      }
+    }
     if(!full)full='(Kono uttor ashe nai, abar try koro.)';
-    out.innerHTML=md(full);
+    cancelAnimationFrame(raf);
+    anEl.innerHTML=md(full);tb.textContent=think;
     hist.push({role:'assistant',text:full});
+    stEl.textContent='⏱ '+(tAns?(tAns/1000).toFixed(1)+'s e shuru · ':'')+secs()+'s e shesh';
     addBar(out,full);
   }catch(e){
-    if(e.name==='AbortError'&&full){out.innerHTML=md(full);hist.push({role:'assistant',text:full});addBar(out,full)}
+    cancelAnimationFrame(raf);
+    if(e.name==='AbortError'&&full){anEl.innerHTML=md(full);hist.push({role:'assistant',text:full});stEl.textContent='■ Stopped';addBar(out,full)}
     else{out.innerHTML='⚠️ '+esc(e.name==='AbortError'?'Stopped.':(e.message||String(e)));hist.pop()}
   }
-  CTX=null;busy=false;ABORT=null;$('send').textContent='➤';saveChat();
+  clearInterval(tick);CTX=null;busy=false;ABORT=null;$('send').textContent='➤';
+  saveChat();maintainSummary(c);
 }
+
+// ---------- Toast / Regenerate / Speed ----------
+function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2200)}
+function regen(){
+  if(busy||hist.length<2)return;
+  const a=hist[hist.length-1],u=hist[hist.length-2];
+  if(a.role!=='assistant'||u.role!=='user')return;
+  hist.length-=2;CURSUM.upto=Math.min(CURSUM.upto,hist.length);
+  if(chat.lastElementChild)chat.lastElementChild.remove();
+  if(chat.lastElementChild)chat.lastElementChild.remove();
+  $('inp').value=u.text;send();
+}
+function spdUI(){const m=S.get('spd','fast')==='smart';$('spdb').textContent=m?'🧠':'⚡';$('spdb').title=m?'Smart mode':'Fast mode'}
+$('spdb').onclick=()=>{const m=S.get('spd','fast')==='smart';S.set('spd',m?'fast':'smart');spdUI();toast(m?'⚡ Fast: sathe sathe uttor':'🧠 Smart: analysis dekhabe, ektu slow')};
+spdUI();
 
 // ---------- Preview ----------
 let lastHtml='';
@@ -385,8 +463,9 @@ function printHtml(body){
 }
 function addBar(el,text){
   const b=document.createElement('div');b.className='bar';
-  const rows=parseTable(text);b.innerHTML='<button data-b="pdf">📄 PDF</button><button data-b="doc">⬇ Word</button><button data-b="md">⬇ .md</button>'+(rows?'<button data-b="csv">⬇ CSV</button><button data-b="xls">⬇ Excel</button>':'')+'<button data-b="cp">Copy</button>';
+  const rows=parseTable(text);b.innerHTML='<button data-b="rg">🔄</button><button data-b="pdf">📄 PDF</button><button data-b="doc">⬇ Word</button><button data-b="md">⬇ .md</button>'+(rows?'<button data-b="csv">⬇ CSV</button><button data-b="xls">⬇ Excel</button>':'')+'<button data-b="cp">Copy</button>';
   b.onclick=e=>{const k=e.target.dataset.b;if(!k)return;
+    if(k==='rg'){if(el===chat.lastElementChild)regen();else toast('Shudhu shesh uttor regenerate hoy');return}
     if(k==='pdf')printHtml(cleanHtml(text));
     else if(k==='doc')dl('<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>'+DOCCSS+'</style></head><body>'+cleanHtml(text)+'</body></html>','document.doc','application/msword');
     else if(k==='md')dl(text,'document.md');
@@ -490,7 +569,7 @@ function toXls(rows){return '<html xmlns:x="urn:schemas-microsoft-com:office:exc
 // ---------- end tables ----------
 
 // ---------- Chat history (multiple chats) ----------
-const HINT='<div class="hint">👋 Ami FM Ai Mood.<br>Coding, research, lekha, business idea, image analysis, sob e help kori.<br>Prothome ⚙️ e tomar API provider ar key boshao.</div>';
+const HINT='<div class="hint">👋 Ami FM Ai Mood.<br>Coding, research, lekha, business idea, image analysis, sob e help kori.<br>Prothome ⚙️ e tomar API provider ar key boshao.<div class="chips"><button class="chip" data-q="Ekta 6 slide er motivational reel baniye dao, 9:16, Bangla te">🎬 Reel video</button><button class="chip" data-q="Ekta F-commerce shop er mobile friendly landing page baniye dao">🌐 Landing page</button><button class="chip" data-q="Amar jonno ekta professional CV baniye dao, placeholder diye">📄 CV</button><button class="chip" data-q="Amake 20k/month online income er 30 din er plan dao">💰 Income plan</button></div></div>';
 let CHATS=[],CUR=null;
 const IDB={db:null,
   open(){return new Promise(r=>{try{const q=indexedDB.open('fm_ai_mood',1);q.onupgradeneeded=()=>q.result.createObjectStore('kv');q.onsuccess=()=>{IDB.db=q.result;r(true)};q.onerror=()=>r(false)}catch(e){r(false)}})},
@@ -592,21 +671,13 @@ function showGen(prompt,w,h){
 }
 function genImage(prompt){showGen(prompt,1024,1024)}
 async function imageFlow(text){
-  busy=true;$('send').textContent='■';
-  let prompt=text;
-  const c=cfg();
-  if(c.key&&c.base&&c.model){
-    const hold=hist;
-    try{
-      hist=[{role:'user',text:text}];
-      ABORT=new AbortController();
-      const t=PROVIDERS[c.p].t,sys=MODES.image;
-      const gen=t==='gemini'?callGemini(c,sys,'image'):t==='anthropic'?callAnthropic(c,sys):callOpenAI(c,sys);
-      let full='';for await(const ch of gen)full+=ch;
-      full=full.trim().replace(/^```\w*\n?/,'').replace(/```$/,'').trim();
-      if(full)prompt=full.slice(0,800);
-    }catch(e){}
-    hist=hold;
+  busy=true;ABORT=new AbortController();$('send').textContent='■';
+  let prompt=text;const c=cfg();
+  const plainEn=/^[\x00-\x7F]+$/.test(text)&&text.length>25;
+  if(!plainEn&&c.key&&c.base&&c.model){
+    const tm=setTimeout(()=>{try{ABORT&&ABORT.abort()}catch(e){}},7000);
+    try{let full=await oneShot(c,MODES.image,text);full=full.replace(/^```\w*\n?/,'').replace(/```$/,'').trim();if(full)prompt=full.slice(0,800)}catch(e){}
+    clearTimeout(tm);
   }
   busy=false;ABORT=null;$('send').textContent='➤';
   showGen(prompt,1024,1024);
@@ -652,6 +723,9 @@ function startMusic(){
 
 // ---------- Misc ----------
 $('inp').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!('ontouchstart' in window)){e.preventDefault();send()}});
+chat.addEventListener('click',e=>{const q=e.target.closest('.chip');if(!q)return;$('inp').value=q.dataset.q;$('inp').focus();$('inp').dispatchEvent(new Event('input'))});
+chat.innerHTML=HINT;
+try{const o=new URL(cfg().base).origin;const l=document.createElement('link');l.rel='preconnect';l.href=o;document.head.appendChild(l)}catch(e){}
 loadChat();
 </script>
 </body>
