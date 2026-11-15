@@ -105,6 +105,8 @@ th{background:#14171d}
   <textarea id="extra" rows="2" placeholder="Jemon: sob uttor Banglish e dao"></textarea>
   <label>Voice input language (🎤)</label>
   <select id="vlang"><option value="bn-BD">বাংলা</option><option value="en-US">English</option><option value="hi-IN">हिन्दी</option></select>
+  <label>AI-r memory size <span class="sm">(ekbare koto ta ager message AI dekhbe. Tarpor purono gulo nijei summary hoye mone thake)</span></label>
+  <select id="bud"><option value="15000">Choto (free Groq / choto model)</option><option value="60000">Medium (default)</option><option value="250000">Boro (Gemini, Claude)</option><option value="700000">Onek boro (Gemini 1M)</option></select>
   <p class="sm">Key ta shudhu tomar browser e thake (localStorage). Request shorashori tomar choose kora provider er server e jay. Unknown/reseller API te sensitive kichu likho na.</p>
   <div style="text-align:right"><button id="close">Cancel</button> <button id="save" class="pri">Save</button></div>
 </dialog>
@@ -166,7 +168,56 @@ const MODES={
 
 // neutral history: {role:'user'|'assistant', text, img?:{mime,data}}
 let hist=[],img=null,busy=false,ABORT=null;
-function recent(){let a=hist.slice(-20);while(a.length&&a[0].role!=='user')a.shift();return a}
+let CTX=null,CURSUM={text:'',upto:0};
+function recent(){let a=CTX||hist;while(a.length&&a[0].role!=='user')a=a.slice(1);return a}
+function clen(m){return (m.text||'').length+(m.img?1500:0)}
+function getBudget(){return Math.max(8000,parseInt(S.get('bud','60000'),10)||60000)}
+async function oneShot(c,sys,prompt){
+  const hold=CTX;CTX=[{role:'user',text:prompt}];
+  try{
+    const t=PROVIDERS[c.p].t;
+    const gen=t==='gemini'?callGemini(c,sys,'general'):t==='anthropic'?callAnthropic(c,sys):callOpenAI(c,sys);
+    let full='';for await(const ch of gen)full+=ch;return full.trim();
+  }finally{CTX=hold}
+}
+async function summarize(c,prev,msgs){
+  const BUD=getBudget(),chunkMax=Math.floor(BUD*0.6);
+  let sum=prev||'';
+  let chunk=[],n=0;
+  const flush=async()=>{
+    if(!chunk.length)return;
+    const tr=chunk.map(m=>(m.role==='user'?'USER: ':'AI: ')+m.text.slice(0,6000)).join('\n\n');
+    const prompt='Tumi conversation memory keeper. Niche ager summary ar notun conversation ongsho dewa ache. Duto mila ekta notun, shompurno summary lekho. Obossoi rakho: user er nam/poricoy/pochondo, shob decision, kaj er state, important tothyo/number/nam, user ki chay, code ba file er main structure, ar kono kaj adha thakle seta. Same bhashay (Banglish/Bangla/English) lekho. 700 shobder moddhe rakho. Shudhu summary ta likho.\n\n=== AGER SUMMARY ===\n'+(sum||'(nai)')+'\n\n=== NOTUN CONVERSATION ===\n'+tr;
+    const r=await oneShot(c,'Tumi ekta conversation summarizer.',prompt);
+    if(r)sum=r.slice(0,9000);
+    chunk=[];n=0;
+  };
+  for(const m of msgs){const l=clen(m);if(n+l>chunkMax&&chunk.length)await flush();chunk.push(m);n+=l}
+  await flush();
+  return sum;
+}
+async function prepareContext(c,sys,out){
+  const BUD=getBudget();
+  const uncovered=hist.slice(CURSUM.upto);
+  let tot=uncovered.reduce((a,m)=>a+clen(m),0);
+  if(tot>BUD){
+    let acc=0,k=hist.length;
+    for(let i=hist.length-1;i>=CURSUM.upto;i--){acc+=clen(hist[i]);if(acc>BUD*0.5)break;k=i}
+    k=Math.min(k,hist.length-1);
+    while(k<hist.length-1&&hist[k].role!=='user')k++;
+    const toSum=hist.slice(CURSUM.upto,k);
+    if(toSum.length){
+      out.innerHTML='<i style="color:var(--mut)">Purono message gulo mone rakhchi (summary toiri hocche)...</i>';
+      try{CURSUM={text:await summarize(c,CURSUM.text,toSum),upto:k}}
+      catch(e){if(e.name==='AbortError')throw e}
+    }
+  }
+  let win=hist.slice(CURSUM.upto);
+  let wt=win.reduce((a,m)=>a+clen(m),0);
+  while(win.length>1&&wt>BUD*1.3){wt-=clen(win[0]);win=win.slice(1)}
+  const sys2=sys+(CURSUM.text?'\n\n[USER er sathe ager shob kothar summary. Eta tomar memory, shob mone rakho ar proyojone use koro]\n'+CURSUM.text:'');
+  return {sys:sys2,msgs:win};
+}
 
 function cfg(){
   const p=S.get('prov','gemini');
@@ -182,11 +233,11 @@ function fillSettings(p){
 }
 $('prov').innerHTML=Object.entries(PROVIDERS).map(([k,v])=>`<option value="${k}">${v.n}</option>`).join('');
 $('prov').onchange=()=>fillSettings($('prov').value);
-$('setb').onclick=()=>{$('prov').value=S.get('prov','gemini');fillSettings($('prov').value);$('extra').value=S.get('extra');$('vlang').value=S.get('vlang','bn-BD');$('dlg').showModal()};
+$('setb').onclick=()=>{$('prov').value=S.get('prov','gemini');fillSettings($('prov').value);$('extra').value=S.get('extra');$('vlang').value=S.get('vlang','bn-BD');$('bud').value=S.get('bud','60000');$('dlg').showModal()};
 $('close').onclick=()=>$('dlg').close();
 $('save').onclick=()=>{
   const p=$('prov').value;
-  S.set('prov',p);S.set('base_'+p,$('base').value.trim().replace(/\/+$/,''));S.set('key_'+p,$('key').value.trim());S.set('model_'+p,$('model').value.trim());S.set('extra',$('extra').value.trim());S.set('vlang',$('vlang').value);
+  S.set('prov',p);S.set('base_'+p,$('base').value.trim().replace(/\/+$/,''));S.set('key_'+p,$('key').value.trim());S.set('model_'+p,$('model').value.trim());S.set('extra',$('extra').value.trim());S.set('vlang',$('vlang').value);S.set('bud',$('bud').value);
   $('dlg').close();
 };
 
@@ -255,6 +306,7 @@ async function fail(res){
   let m='Error '+res.status;
   try{const j=await res.json();m=(j.error&&(j.error.message||j.error))||j.message||JSON.stringify(j)}catch(e){}
   if(res.status===429)m='Rate limit / quota shesh. Ektu pore try koro ba onno model/provider nao. ('+m+')';
+  if(res.status===413||/too large|context|maximum|exceed|token/i.test(String(m))&&res.status>=400&&res.status!==429)m+='  — Message beshi boro hoye gese. ⚙️ e "AI-r memory size" Choto koro.';
   if(res.status===401||res.status===403)m='Key thik na ba permission nai. ('+m+')';
   throw new Error(typeof m==='string'?m:JSON.stringify(m));
 }
@@ -300,7 +352,10 @@ async function send(){
   let full='';
   try{
     const t=PROVIDERS[c.p].t;
-    const gen=t==='gemini'?callGemini(c,sys,mode):t==='anthropic'?callAnthropic(c,sys):callOpenAI(c,sys);
+    const px=await prepareContext(c,sys,out);
+    CTX=px.msgs;
+    out.innerHTML='<i style="color:var(--mut)">Bhabchi...</i>';
+    const gen=t==='gemini'?callGemini(c,px.sys,mode):t==='anthropic'?callAnthropic(c,px.sys):callOpenAI(c,px.sys);
     for await(const chunk of gen){full+=chunk;out.innerHTML=md(full);chat.scrollTop=chat.scrollHeight}
     if(!full)full='(Kono uttor ashe nai, abar try koro.)';
     out.innerHTML=md(full);
@@ -310,7 +365,7 @@ async function send(){
     if(e.name==='AbortError'&&full){out.innerHTML=md(full);hist.push({role:'assistant',text:full});addBar(out,full)}
     else{out.innerHTML='⚠️ '+esc(e.name==='AbortError'?'Stopped.':(e.message||String(e)));hist.pop()}
   }
-  busy=false;ABORT=null;$('send').textContent='➤';saveChat();
+  CTX=null;busy=false;ABORT=null;$('send').textContent='➤';saveChat();
 }
 
 // ---------- Preview ----------
@@ -454,7 +509,7 @@ function saveChat(){
   const msgs=hist.map(m=>({role:m.role,text:m.text,img:!!m.img}));
   let c=CHATS.find(x=>x.id===CUR);
   if(!c){const f=hist.find(x=>x.role==='user');c={id:'c'+Date.now(),title:(f?f.text:'Notun chat').replace(/\s+/g,' ').slice(0,45),ts:0,msgs:[]};CHATS.unshift(c);CUR=c.id}
-  c.msgs=msgs;c.ts=Date.now();
+  c.msgs=msgs;c.ts=Date.now();c.sum=CURSUM.text;c.upto=CURSUM.upto;
   CHATS.sort((a,b)=>b.ts-a.ts);
   if(CHATS.length>300)CHATS.length=300;
   persist();
@@ -467,11 +522,11 @@ function renderMsgs(msgs){
     else{const o=add('bot',md(m.text));addBar(o,m.text)}
   });
 }
-function newChat(){if(busy)return;hist=[];CUR=null;persist();renderMsgs([])}
+function newChat(){if(busy)return;hist=[];CURSUM={text:'',upto:0};CUR=null;persist();renderMsgs([])}
 function openChat(id){
   if(busy)return;
   const c=CHATS.find(x=>x.id===id);if(!c)return;
-  CUR=id;hist=c.msgs.map(m=>({role:m.role,text:m.text}));persist();renderMsgs(c.msgs);
+  CUR=id;hist=c.msgs.map(m=>({role:m.role,text:m.text}));CURSUM={text:c.sum||'',upto:Math.min(c.upto||0,hist.length)};persist();renderMsgs(c.msgs);
   if($('hdlg').open)$('hdlg').close();
 }
 function renderHist(){
@@ -486,7 +541,7 @@ $('hlist').onclick=e=>{
     const id=d.dataset.del;
     if(!confirm('Ei chat ta delete korbe?'))return;
     CHATS=CHATS.filter(c=>c.id!==id);
-    if(CUR===id&&!busy){CUR=null;hist=[];renderMsgs([])}
+    if(CUR===id&&!busy){CUR=null;hist=[];CURSUM={text:'',upto:0};renderMsgs([])}
     persist();renderHist();return;
   }
   const it=e.target.closest('.hi');if(it)openChat(it.dataset.id);
@@ -510,7 +565,7 @@ async function loadChat(){
   }
   try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
   const c=CHATS.find(x=>x.id===CUR);
-  if(c){hist=c.msgs.map(m=>({role:m.role,text:m.text}));renderMsgs(c.msgs)}
+  if(c){hist=c.msgs.map(m=>({role:m.role,text:m.text}));CURSUM={text:c.sum||'',upto:Math.min(c.upto||0,hist.length)};renderMsgs(c.msgs)}
 }
 
 // ---------- Image generation (Pollinations, free, no key) ----------
