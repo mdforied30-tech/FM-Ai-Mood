@@ -110,6 +110,12 @@ header button{padding:6px 9px}
   <input id="model" list="mlist" placeholder="model name">
   <datalist id="mlist"></datalist>
   <div id="help" class="sm" style="margin:-4px 0 10px"></div>
+  <label>🔁 Backup provider <span class="sm">(main API slow ba error dile auto ei ta te jabe. Backup er key age ekbar Save kore rakho)</span></label>
+  <select id="fb"></select>
+  <label>Koto second er moddhe uttor na ashle backup e jabe</label>
+  <select id="fbs"><option value="8">8 sec</option><option value="15">15 sec</option><option value="25">25 sec</option><option value="40">40 sec</option></select>
+  <button id="stest" type="button" style="width:100%;margin-bottom:6px">⚡ Provider speed test (kon ta druto dekho)</button>
+  <div id="stres" class="sm" style="margin-bottom:10px"></div>
   <label>Extra instruction (optional)</label>
   <textarea id="extra" rows="2" placeholder="Jemon: sob uttor Banglish e dao"></textarea>
   <label>Voice input language (🎤)</label>
@@ -234,6 +240,42 @@ async function maintainSummary(c){
   SUMMING=false;
 }
 
+function cfgFor(p){return {p,base:S.get('base_'+p,PROVIDERS[p].base),key:S.get('key_'+p),model:S.get('model_'+p,(PROVIDERS[p].models[0]||''))}}
+function getFallback(c){
+  const f=S.get('fb','');
+  if(!f||f===c.p||!PROVIDERS[f])return null;
+  const x=cfgFor(f);return x.key&&x.base&&x.model?x:null;
+}
+function fillFb(){$('fb').innerHTML='<option value="">Nai (off)</option>'+Object.entries(PROVIDERS).map(([k,v])=>`<option value="${k}">${esc(v.n)}</option>`).join('')}
+async function ttft(cc,ms){
+  const t0=performance.now();
+  const ac=new AbortController();const tm=setTimeout(()=>ac.abort(),ms);
+  ABORT=ac;
+  try{
+    CTX=[{role:'user',text:'Hi'}];
+    const t=PROVIDERS[cc.p].t;
+    const gen=t==='gemini'?callGemini(cc,'Reply with one word.','general'):t==='anthropic'?callAnthropic(cc,'Reply with one word.'):callOpenAI(cc,'Reply with one word.');
+    const it=gen[Symbol.asyncIterator]();
+    let r=await it.next();CTX=null;
+    while(!r.done&&typeof r.value!=='string')r=await it.next();
+    if(r.done)return {ok:false,err:'uttor ashe nai'};
+    const dt=(performance.now()-t0)/1000;ac.abort();
+    return {ok:true,t:dt};
+  }catch(e){return {ok:false,err:e.name==='AbortError'?'timeout '+(ms/1000)+'s':String(e.message||e).slice(0,60)}}
+  finally{clearTimeout(tm)}
+}
+$('stest').onclick=async()=>{
+  if(busy)return;
+  const ps=Object.keys(PROVIDERS).filter(k=>S.get('key_'+k)&&cfgFor(k).base&&cfgFor(k).model);
+  if(!ps.length){$('stres').textContent='Kono provider er key save kora nai.';return}
+  $('stres').textContent='Test cholche... (max 25s)';
+  busy=true;
+  const rs=[];
+  for(const k of ps){rs.push({k,r:await ttft(cfgFor(k),25000)});$('stres').innerHTML=rs.map(x=>esc(PROVIDERS[x.k].n)+': '+(x.r.ok?'<b>'+x.r.t.toFixed(1)+'s</b>':'❌ '+esc(x.r.err))).join('<br>')+'<br>Test cholche...'}
+  busy=false;ABORT=null;CTX=null;
+  const ok=rs.filter(x=>x.r.ok).sort((a,b)=>a.r.t-b.r.t);
+  $('stres').innerHTML=rs.map(x=>esc(PROVIDERS[x.k].n)+': '+(x.r.ok?'<b>'+x.r.t.toFixed(1)+'s</b>':'❌ '+esc(x.r.err))).join('<br>')+(ok.length?'<br>🏆 Shobcheye druto: <b>'+esc(PROVIDERS[ok[0].k].n)+'</b>':'');
+};
 function cfg(){
   const p=S.get('prov','gemini');
   return {p,base:S.get('base_'+p,PROVIDERS[p].base),key:S.get('key_'+p),model:S.get('model_'+p,(PROVIDERS[p].models[0]||''))};
@@ -248,11 +290,11 @@ function fillSettings(p){
 }
 $('prov').innerHTML=Object.entries(PROVIDERS).map(([k,v])=>`<option value="${k}">${v.n}</option>`).join('');
 $('prov').onchange=()=>fillSettings($('prov').value);
-$('setb').onclick=()=>{$('prov').value=S.get('prov','gemini');fillSettings($('prov').value);$('extra').value=S.get('extra');$('vlang').value=S.get('vlang','bn-BD');$('bud').value=S.get('bud','60000');$('dlg').showModal()};
+$('setb').onclick=()=>{$('prov').value=S.get('prov','gemini');fillSettings($('prov').value);$('extra').value=S.get('extra');$('vlang').value=S.get('vlang','bn-BD');$('bud').value=S.get('bud','60000');fillFb();$('fb').value=S.get('fb','');$('fbs').value=S.get('fbs','15');$('stres').textContent='';$('dlg').showModal()};
 $('close').onclick=()=>$('dlg').close();
 $('save').onclick=()=>{
   const p=$('prov').value;
-  S.set('prov',p);S.set('base_'+p,$('base').value.trim().replace(/\/+$/,''));S.set('key_'+p,$('key').value.trim());S.set('model_'+p,$('model').value.trim());S.set('extra',$('extra').value.trim());S.set('vlang',$('vlang').value);S.set('bud',$('bud').value);
+  S.set('prov',p);S.set('base_'+p,$('base').value.trim().replace(/\/+$/,''));S.set('key_'+p,$('key').value.trim());S.set('model_'+p,$('model').value.trim());S.set('extra',$('extra').value.trim());S.set('vlang',$('vlang').value);S.set('bud',$('bud').value);S.set('fb',$('fb').value);S.set('fbs',$('fbs').value);
   $('dlg').close();
 };
 
@@ -403,24 +445,41 @@ async function send(){
   const near=()=>chat.scrollHeight-chat.scrollTop-chat.clientHeight<160;
   const paint=()=>{raf=0;if(!dirty)return;dirty=false;const n=near();anEl.innerHTML=md(full);tb.textContent=think;if(n)chat.scrollTop=chat.scrollHeight};
   const sched=()=>{dirty=true;if(!raf)raf=requestAnimationFrame(paint)};
-  try{
-    const t=PROVIDERS[c.p].t;
-    const px=prepareContext(sys);
-    CTX=px.msgs;
-    const gen=t==='gemini'?callGemini(c,px.sys,mode):t==='anthropic'?callAnthropic(c,px.sys):callOpenAI(c,px.sys);
-    for await(const chunk of gen){
-      if(typeof chunk==='string'){
-        if(!tAns){tAns=performance.now()-T0;gotAny=true;thEl.open=false;stEl.textContent='⚡ '+(tAns/1000).toFixed(1)+'s e shuru'}
-        full+=chunk;sched();
-      }else if(chunk&&chunk.think){
-        gotAny=true;thEl.style.display='';think+=chunk.think;stEl.textContent='🧠 Analysis kortechi... '+secs()+'s';sched();
+  let tmo=false,usedFb='';
+  const attempt=async(cc,isFb)=>{
+    ABORT=new AbortController();tmo=false;
+    const ac=ABORT,sec=Math.max(3,parseInt(S.get('fbs','15'),10)||15);
+    let timer=(!isFb&&getFallback(cc))?setTimeout(()=>{tmo=true;ac.abort()},sec*1000):null;
+    try{
+      const t=PROVIDERS[cc.p].t;
+      const px=prepareContext(sys);
+      CTX=px.msgs;
+      const gen=t==='gemini'?callGemini(cc,px.sys,mode):t==='anthropic'?callAnthropic(cc,px.sys):callOpenAI(cc,px.sys);
+      for await(const chunk of gen){
+        if(timer){clearTimeout(timer);timer=null}
+        if(typeof chunk==='string'){
+          if(!tAns){tAns=performance.now()-T0;gotAny=true;thEl.open=false;stEl.textContent='⚡ '+(tAns/1000).toFixed(1)+'s e shuru'+(isFb?' (backup: '+cc.p+')':'')}
+          full+=chunk;sched();
+        }else if(chunk&&chunk.think){
+          gotAny=true;thEl.style.display='';think+=chunk.think;stEl.textContent='🧠 Analysis kortechi... '+secs()+'s';sched();
+        }
       }
+    }finally{if(timer)clearTimeout(timer)}
+  };
+  try{
+    try{await attempt(c,false)}
+    catch(e){
+      const fb=getFallback(c);
+      if(fb&&!gotAny&&!(e.name==='AbortError'&&!tmo)){
+        stEl.textContent='🔁 '+(tmo?'Slow':'Error')+', backup ('+fb.p+') e jacchi... '+secs()+'s';
+        usedFb=fb.p;await attempt(fb,true);
+      }else throw e;
     }
     if(!full)full='(Kono uttor ashe nai, abar try koro.)';
     cancelAnimationFrame(raf);
     anEl.innerHTML=md(full);tb.textContent=think;
     hist.push({role:'assistant',text:full});
-    stEl.textContent='⏱ '+(tAns?(tAns/1000).toFixed(1)+'s e shuru · ':'')+secs()+'s e shesh';
+    stEl.textContent='⏱ '+(tAns?(tAns/1000).toFixed(1)+'s e shuru · ':'')+secs()+'s e shesh'+(usedFb?' · backup: '+usedFb:'');
     addBar(out,full);
   }catch(e){
     cancelAnimationFrame(raf);
